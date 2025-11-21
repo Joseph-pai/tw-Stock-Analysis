@@ -1,29 +1,18 @@
 [build]
-  # 1. 靜態檔案發布目錄 (Publish Directory)
-  # Netlify 應該從哪個資料夾提供您的網站檔案。
-  # 由於您的 index.html 就在專案根目錄，所以設定為 "/"
+  # 靜態檔案發布目錄，如果您的 index.html 就在根目錄，則設定為 "/"
   publish = "/"
-  
-  # 2. 伺服器函式目錄 (Functions Directory)
-  # 告訴 Netlify 在哪個資料夾中可以找到您的 Netlify Functions 程式碼。
-  # 這是我們步驟二中會建立的資料夾路徑。
+  # Netlify Functions 的目錄
   functions = "netlify/functions"
 
 [functions]
-  # 3. 函式運行環境設定 (Functions Configuration)
-  # 指定 Node.js 的版本，推薦使用較新的穩定版本。
-  node_runtime = "nodejs20.x"
-  # 延長 Functions 的執行時間上限，確保獲取 Yahoo Finance 資料時不會超時。
+  # 僅保留 timeout 設定。
+  # Netlify 會自動使用最新的預設 Node.js runtime (目前為 nodejs20.x 或更高)，
+  # 避免語法錯誤。
   timeout = 20 # 單位為秒 (Seconds)
   
-# 4. 重定向/代理規則 (Redirects/Proxies)
-# 雖然我們在前端會直接呼叫 /.netlify/functions/fetch-financials，
-# 但這個規則能讓您未來使用更簡潔的 /api/fetch-financials 來呼叫函式。
+# 設定 /api/* 請求代理到我們的 Functions 裡
 [[redirects]]
-  # 攔截所有以 /api/ 開頭的請求
   from = "/api/*"
-  # 將這些請求透明地代理 (Proxy) 到 Functions 目錄下對應的函式
   to = "/.netlify/functions/:splat"
-  # 狀態碼 200 表示這是一個隱形的代理 (對瀏覽器來說像在同一個伺服器)
   status = 200
-  force = true # 確保此規則優先執行
+  force = true
