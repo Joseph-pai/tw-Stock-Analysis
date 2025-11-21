@@ -286,52 +286,51 @@ async function fetchTWSEPrice(stockId) {
 
 // 從台灣證券交易所獲取財報資料
 // 從 台灣證券交易所 (TWSE) 獲取財務數據 (使用 Netlify Function 代理)
-async function fetchTWSEFinancials(stockId, type) {
-    log(`證交所財報 請求中 (透過 Netlify Function 代理)... (${stockId}, ${type})`);
-    const isQuarterly = type === '季';
-    const proxyType = isQuarterly ? 'quarterly' : 'annual';
-    const apiUrl = `/.netlify/functions/fetch-twse?type=${proxyType}`; // 呼叫新的 TWSE 代理 Function
-
+// 從 台灣證券交易所 (TWSE) 獲取財務數據 (使用 Netlify Function 代理)
+async function fetchTWSEFinancials(stockId, period) {
+    log(`證交所財報 請求中 (透過 Netlify Function 代理)... (${stockId})`);
+    
     try {
-        const response = await fetch(apiUrl);
+        // 1. 先抓取「財務報告」 (EPS)
+        // 呼叫我們自己的後端: /.netlify/functions/fetch-twse?type=quarterly
+        const reportRes = await fetch(`/.netlify/functions/fetch-twse?type=quarterly`);
         
-        if (!response.ok) {
-            log(`證交所財報 Netlify Function 代理失敗: HTTP ${response.status}`);
+        // 2. 再抓取「財務比率」 (ROE, 毛利率)
+        // 呼叫我們自己的後端: /.netlify/functions/fetch-twse?type=annual
+        const ratioRes = await fetch(`/.netlify/functions/fetch-twse?type=annual`);
+
+        if (!reportRes.ok || !ratioRes.ok) {
+            log(`證交所代理請求失敗`);
             return null;
         }
 
-        const data = await response.json();
-        
-        if (!data || data.length === 0) {
-            log('證交所財報 代理成功但數據為空。');
+        const reportData = await reportRes.json();
+        const ratioData = await ratioRes.json();
+
+        // 3. 在所有資料中尋找目標股票 (Client-side filtering)
+        // 注意：證交所資料中的 Key 都是中文
+        const stockReport = reportData.find(item => item.Code === stockId || item.公司代號 === stockId);
+        const stockRatio = ratioData.find(item => item.Code === stockId || item.公司代號 === stockId);
+
+        if (stockReport && stockRatio) {
+            // 整合數據
+            const result = {
+                eps: stockReport.EPS || stockReport['基本每股盈餘(元)'] || 'N/A',
+                roe: stockRatio.ROE || stockRatio['權益報酬率(%)'] || 'N/A',
+                revenueGrowth: stockRatio['營業收入成長率(%)'] || stockRatio.revenueGrowth || 'N/A',
+                grossProfitMargin: stockRatio['毛利率(%)'] || stockRatio.grossMargin || 'N/A',
+                period: period,
+                source: '台灣證券交易所 (via Proxy)'
+            };
+            log(`TWSE 代理成功: EPS=${result.eps}, ROE=${result.roe}`);
+            return result;
+        } else {
+            log(`TWSE 代理成功但未找到 ${stockId} 的資料`);
             return null;
         }
-
-        // 篩選和轉換邏輯 (使用 stockId 篩選並取最新一筆)
-        const filteredData = data.filter(item => item.公司代號 === stockId);
-        
-        if (filteredData.length === 0) {
-            log(`證交所財報 找到總資料但無該股票代號 ${stockId} 的資料。`);
-            return null;
-        }
-
-        const latestData = filteredData[0]; // 假設第一個元素是最新數據
-
-        const twseFinancialData = {
-            eps: latestData.基本每股盈餘 || 'N/A',
-            // 由於 TWSE API 返回的欄位名稱不確定，請檢查您的原始程式碼中是如何從 TWSE 資料結構中提取 ROE, 營收成長率, 毛利率。
-            // 這裡使用常見的欄位名稱，如果失敗可能需要調整：
-            roe: parseFloat(latestData.權益報酬率) || 'N/A',
-            revenueGrowth: parseFloat(latestData.營收成長率) || 'N/A',
-            grossProfitMargin: parseFloat(latestData.毛利率) || 'N/A',
-            source: `TWSE (${type} - via Netlify Function)`
-        };
-
-        log(`TWSE 成功取得財報資料`);
-        return twseFinancialData;
 
     } catch (err) {
-        log(`證交所財報 呼叫 Netlify Function 失敗: ${err.message}`);
+        log(`證交所財報代理 失敗: ${err.message}`);
         return null;
     }
 }
