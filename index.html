@@ -290,9 +290,9 @@ async function fetchTWSEFinancials(stockId, period) {
     log(`證交所財報 請求中 (透過 Netlify Function 代理)... (${stockId})`);
     
     try {
-        // 1. 抓取「財務報告」 (EPS)
+        // 1. 抓取「綜合損益表」 (來源包含一般業、金控等，含 EPS)
         const reportRes = await fetch(`/.netlify/functions/fetch-twse?type=quarterly`);
-        // 2. 抓取「財務比率」 (ROE, 毛利率)
+        // 2. 抓取「營益分析表」 (含毛利率、營業利益率)
         const ratioRes = await fetch(`/.netlify/functions/fetch-twse?type=annual`);
 
         if (!reportRes.ok || !ratioRes.ok) {
@@ -303,59 +303,46 @@ async function fetchTWSEFinancials(stockId, period) {
         const reportData = await reportRes.json();
         const ratioData = await ratioRes.json();
 
-        // 輔助函數：模糊搜尋物件中的值 (解決全形/半形括號問題)
+        // 輔助函數：模糊搜尋物件中的值 (解決不同資料表欄位名稱不一致的問題)
         const findValue = (obj, keywords) => {
             if (!obj) return null;
-            // 1. 先嘗試直接匹配
-            for (const key of keywords) {
-                if (obj[key] !== undefined) return obj[key];
-            }
-            // 2. 模糊匹配 (Key 中包含關鍵字)
             const keys = Object.keys(obj);
-            for (const key of keys) {
-                for (const kw of keywords) {
-                    // 如果欄位名稱包含關鍵字 (例如 "盈餘" 或 "EPS")
-                    if (key.includes(kw)) return obj[key];
-                }
+            for (const kw of keywords) {
+                // 精確或模糊匹配
+                const match = keys.find(k => k === kw || k.includes(kw));
+                if (match) return obj[match];
             }
             return null;
         };
 
         // 3. 在所有資料中尋找目標股票
-        // 注意：證交所資料可能是 "Code" 也可能是 "公司代號"
         const findStock = (data) => data.find(item => (item.Code === stockId || item.公司代號 === stockId));
         
         const stockReport = findStock(reportData);
         const stockRatio = findStock(ratioData);
 
-        if (stockReport && stockRatio) {
-            // debug: 印出找到的欄位名稱，確認 API 回傳了什麼
-            // console.log('Found Report Keys:', Object.keys(stockReport));
-            
-            // 使用模糊搜尋來提取數據
-            const rawEPS = findValue(stockReport, ['基本每股盈餘(元)', '基本每股盈餘（元）', 'EPS', '盈餘']);
-            const rawROE = findValue(stockRatio, ['權益報酬率(%)', '權益報酬率（％）', 'ROE', '權益報酬率']);
-            const rawGrowth = findValue(stockRatio, ['營業收入成長率(%)', '營業收入成長率（％）', '營收成長率', 'revenueGrowth']);
-            const rawMargin = findValue(stockRatio, ['毛利率(%)', '毛利率（％）', '毛利率', 'grossMargin']);
+        if (stockReport || stockRatio) {
+            // debug: 印出找到的資料，方便除錯
+            if(stockReport) console.log('Report Data:', stockReport);
+            if(stockRatio) console.log('Ratio Data:', stockRatio);
 
             const result = {
-                eps: rawEPS || 'N/A',
-                roe: rawROE || 'N/A',
-                revenueGrowth: rawGrowth || 'N/A',
-                grossProfitMargin: rawMargin || 'N/A',
+                // 損益表通常包含 "基本每股盈餘"
+                eps: findValue(stockReport, ['基本每股盈餘', 'EPS']) || 'N/A',
+                // 營益分析表通常包含 "毛利率"
+                grossProfitMargin: findValue(stockRatio, ['毛利率']) || 'N/A',
+                // 營益分析表可能不直接含 ROE，暫用 "純益率" 或 "營業利益率" 替代 ROE 顯示，或標示為 N/A
+                // 注意：TWSE Open Data 的營益分析表通常包含 "營業收入"、"毛利率"、"營業利益率"、"純益率"
+                roe: findValue(stockRatio, ['權益報酬率', '純益率']) || 'N/A', 
+                revenueGrowth: findValue(stockRatio, ['營業收入', '營收']) ? 'N/A' : 'N/A', // 營益表通常是數值非成長率，這裡暫時 N/A
                 period: period,
                 source: '台灣證券交易所 (via Proxy)'
             };
             
-            // 如果還是 N/A，印出詳細除錯訊息到畫面
-            if (result.eps === 'N/A') {
-                log(`[除錯] 找到股票但抓不到 EPS。可用欄位: ${Object.keys(stockReport).join(', ')}`);
-            }
-            
-            log(`TWSE 代理成功: EPS=${result.eps}, ROE=${result.roe}`);
+            log(`TWSE 代理成功: EPS=${result.eps}, 毛利率=${result.grossProfitMargin}`);
             return result;
         } else {
-            log(`TWSE 代理成功但未找到 ${stockId} 的資料 (可能是資料源尚未更新)`);
+            log(`TWSE 代理成功但未找到 ${stockId} 的資料`);
             return null;
         }
 
