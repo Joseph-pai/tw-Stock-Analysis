@@ -285,31 +285,56 @@ async function fetchTWSEPrice(stockId) {
 }
 
 // 從台灣證券交易所獲取財報資料
-async function fetchTWSEFinancials(stockId, period) {
-    log(`證交所財報 請求中... (${stockId}, ${period})`);
+// 從 台灣證券交易所 (TWSE) 獲取財務數據 (使用 Netlify Function 代理)
+async function fetchTWSEFinancials(stockId, type) {
+    log(`證交所財報 請求中 (透過 Netlify Function 代理)... (${stockId}, ${type})`);
+    const isQuarterly = type === '季';
+    const proxyType = isQuarterly ? 'quarterly' : 'annual';
+    const apiUrl = `/.netlify/functions/fetch-twse?type=${proxyType}`; // 呼叫新的 TWSE 代理 Function
+
     try {
-        // 證交所的公開資料平台API
-        const urls = [
-            `https://openapi.twse.com.tw/v1/opendata/t187ap03_L`, // 財務報告
-            `https://openapi.twse.com.tw/v1/opendata/t187ap04_L`, // 財務比率
-        ];
+        const response = await fetch(apiUrl);
         
-        for (const url of urls) {
-            try {
-                const response = await fetch(url);
-                if (response.ok) {
-                    const data = await response.json();
-                    // 過濾出目標股票的資料
-                    const stockData = Array.isArray(data) ? data.find(item => item.Code === stockId) : null;
-                    if (stockData) {
-                        log(`證交所財報成功: 找到 ${stockId} 資料`);
-                        return processTWSEData(stockData, period);
-                    }
-                }
-            } catch (err) {
-                log(`證交所財報URL ${url} 失敗: ${err.message}`);
-            }
+        if (!response.ok) {
+            log(`證交所財報 Netlify Function 代理失敗: HTTP ${response.status}`);
+            return null;
         }
+
+        const data = await response.json();
+        
+        if (!data || data.length === 0) {
+            log('證交所財報 代理成功但數據為空。');
+            return null;
+        }
+
+        // 篩選和轉換邏輯 (使用 stockId 篩選並取最新一筆)
+        const filteredData = data.filter(item => item.公司代號 === stockId);
+        
+        if (filteredData.length === 0) {
+            log(`證交所財報 找到總資料但無該股票代號 ${stockId} 的資料。`);
+            return null;
+        }
+
+        const latestData = filteredData[0]; // 假設第一個元素是最新數據
+
+        const twseFinancialData = {
+            eps: latestData.基本每股盈餘 || 'N/A',
+            // 由於 TWSE API 返回的欄位名稱不確定，請檢查您的原始程式碼中是如何從 TWSE 資料結構中提取 ROE, 營收成長率, 毛利率。
+            // 這裡使用常見的欄位名稱，如果失敗可能需要調整：
+            roe: parseFloat(latestData.權益報酬率) || 'N/A',
+            revenueGrowth: parseFloat(latestData.營收成長率) || 'N/A',
+            grossProfitMargin: parseFloat(latestData.毛利率) || 'N/A',
+            source: `TWSE (${type} - via Netlify Function)`
+        };
+
+        log(`TWSE 成功取得財報資料`);
+        return twseFinancialData;
+
+    } catch (err) {
+        log(`證交所財報 呼叫 Netlify Function 失敗: ${err.message}`);
+        return null;
+    }
+}
         
         // 如果主要API失敗，嘗試備用API
         const backupUrl = `https://openapi.twse.com.tw/v1/opendata/t187ap05_L`; // 其他財務資料
