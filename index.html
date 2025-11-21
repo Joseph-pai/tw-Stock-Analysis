@@ -36,7 +36,6 @@
 <h1 class="text-center mb-2">台灣股市終極專業分析器</h1>
 <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/20 完美版 • 整合證交所+公開資訊觀測站+FinMind三大資料源 • 可自訂權重與時間</p>
 
-<!-- Token 輸入 -->
 <div class="row justify-content-center mb-4">
     <div class="col-md-8">
         <div class="input-group">
@@ -49,7 +48,6 @@
     </div>
 </div>
 
-<!-- 股票選擇與日期範圍 -->
 <div class="row justify-content-center mb-4">
     <div class="col-md-8">
         <form id="analyzeForm">
@@ -231,9 +229,10 @@ document.getElementById('saveToken').onclick = async () => {
     TOKEN = document.getElementById('tokenInput').value.trim();
     
     if (TOKEN) {
-        document.getElementById('tokenStatus').innerHTML = '<span style="color:#ffc107">正在驗證 Token...</span>';
+        document.getElementById('tokenStatus').innerHTML = '<span style="color:#ffc107">正在透過代理驗證 Token...</span>';
         try {
-            const testUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInfo&token=${TOKEN}`;
+            // 使用 Netlify Function 代理驗證 Token
+            const testUrl = `/.netlify/functions/fetch-finmind?dataset=TaiwanStockInfo&token=${TOKEN}`;
             const response = await fetch(testUrl);
             const data = await response.json();
             
@@ -248,8 +247,9 @@ document.getElementById('saveToken').onclick = async () => {
                 alert(`Token 驗證失敗！\n${data.msg || '請檢查 Token 是否正確'}`);
             }
         } catch (err) {
-            document.getElementById('tokenStatus').innerHTML = `<span style="color:#dc3545">✗ 驗證失敗</span>`;
-            alert(`無法驗證：${err.message}`);
+            document.getElementById('tokenStatus').innerHTML = `<span style="color:#dc3545">✗ 驗證失敗 (系統錯誤)</span>`;
+            console.error(err);
+            alert(`驗證過程發生錯誤，請檢查網路或稍後再試。`);
         }
     } else {
         try { localStorage.setItem('joseph_pai_token_2025', ''); } catch(e) {}
@@ -284,19 +284,15 @@ async function fetchTWSEPrice(stockId) {
     }
 }
 
-// 從台灣證券交易所獲取財報資料
-// 從 台灣證券交易所 (TWSE) 獲取財務數據 (使用 Netlify Function 代理)
 // 從 台灣證券交易所 (TWSE) 獲取財務數據 (使用 Netlify Function 代理)
 async function fetchTWSEFinancials(stockId, period) {
     log(`證交所財報 請求中 (透過 Netlify Function 代理)... (${stockId})`);
     
     try {
         // 1. 先抓取「財務報告」 (EPS)
-        // 呼叫我們自己的後端: /.netlify/functions/fetch-twse?type=quarterly
         const reportRes = await fetch(`/.netlify/functions/fetch-twse?type=quarterly`);
         
         // 2. 再抓取「財務比率」 (ROE, 毛利率)
-        // 呼叫我們自己的後端: /.netlify/functions/fetch-twse?type=annual
         const ratioRes = await fetch(`/.netlify/functions/fetch-twse?type=annual`);
 
         if (!reportRes.ok || !ratioRes.ok) {
@@ -307,13 +303,11 @@ async function fetchTWSEFinancials(stockId, period) {
         const reportData = await reportRes.json();
         const ratioData = await ratioRes.json();
 
-        // 3. 在所有資料中尋找目標股票 (Client-side filtering)
-        // 注意：證交所資料中的 Key 都是中文
+        // 3. 在所有資料中尋找目標股票
         const stockReport = reportData.find(item => item.Code === stockId || item.公司代號 === stockId);
         const stockRatio = ratioData.find(item => item.Code === stockId || item.公司代號 === stockId);
 
         if (stockReport && stockRatio) {
-            // 整合數據
             const result = {
                 eps: stockReport.EPS || stockReport['基本每股盈餘(元)'] || 'N/A',
                 roe: stockRatio.ROE || stockRatio['權益報酬率(%)'] || 'N/A',
@@ -334,33 +328,9 @@ async function fetchTWSEFinancials(stockId, period) {
         return null;
     }
 }
-        
-        // 如果主要API失敗，嘗試備用API
-        const backupUrl = `https://openapi.twse.com.tw/v1/opendata/t187ap05_L`; // 其他財務資料
-        try {
-            const response = await fetch(backupUrl);
-            if (response.ok) {
-                const data = await response.json();
-                const stockData = Array.isArray(data) ? data.find(item => item.Code === stockId) : null;
-                if (stockData) {
-                    log(`證交所備用財報成功: 找到 ${stockId} 資料`);
-                    return processTWSEData(stockData, period);
-                }
-            }
-        } catch (err) {
-            log(`證交所備用財報失敗: ${err.message}`);
-        }
-        
-        return null;
-    } catch (err) {
-        log(`證交所財報失敗: ${err.message}`);
-        return null;
-    }
-}
 
-// 處理證交所財報數據
+// 處理證交所財報數據 (保留供參考或備用)
 function processTWSEData(data, period) {
-    // 根據實際的證交所API回應結構調整這些欄位名稱
     const result = {
         eps: data.EPS || data.eps || data['基本每股盈餘(元)'] || 'N/A',
         roe: data.ROE || data.roe || data['權益報酬率(%)'] || 'N/A',
@@ -369,8 +339,6 @@ function processTWSEData(data, period) {
         period: period,
         source: '台灣證券交易所'
     };
-    
-    log(`證交所數據處理: EPS=${result.eps}, ROE=${result.roe}, 增率=${result.revenueGrowth}, 毛利率=${result.grossProfitMargin}`);
     return result;
 }
 
@@ -378,8 +346,6 @@ function processTWSEData(data, period) {
 async function fetchYahooFinanceFinancials(stockId) {
     log(`Yahoo Finance 財報資料 請求中 (透過 Netlify Function 代理)... (${stockId})`);
     try {
-        // 呼叫我們自己的 Netlify Function
-        // 假設您的 Function 名稱是 fetch-financials
         const apiUrl = `/.netlify/functions/fetch-financials?id=${stockId}`;
         
         const response = await fetch(apiUrl);
@@ -389,12 +355,10 @@ async function fetchYahooFinanceFinancials(stockId) {
             return null;
         }
         
-        // 數據結構已經在 Function 內處理過，直接拿到 result[0] 的內容
         const result = await response.json(); 
         
         if (result && !result.error) {
             const financialData = {
-                // 從 Function 返回的 result 結構中提取數據
                 eps: result.defaultKeyStatistics?.trailingEps?.raw || 'N/A',
                 roe: result.financialData?.returnOnEquity?.raw ? result.financialData.returnOnEquity.raw * 100 : 'N/A',
                 revenueGrowth: result.financialData?.revenueGrowth?.raw ? result.financialData.revenueGrowth.raw * 100 : 'N/A',
@@ -415,99 +379,26 @@ async function fetchYahooFinanceFinancials(stockId) {
     }
 }
 
-// 從公開資訊觀測站獲取月營收（用於計算營收數據）
-async function fetchMOPSRevenue(stockId, year, month) {
-    log(`MOPS月營收 請求中... (${year}/${month})`);
-    try {
-        // 月營收查詢 URL (民國年)
-        const rocYear = year - 1911;
-        const url = `https://mops.twse.com.tw/nas/t21/sii/t21sc03_${rocYear}_${month}_0.html`;
-        
-        const response = await fetch(url);
-        if (!response.ok) {
-            log(`MOPS月營收 HTTP錯誤: ${response.status}`);
-            return null;
-        }
-        
-        const html = await response.text();
-        
-        // 簡單解析 HTML 表格
-        // 實際的 MOPS 回應是 HTML 表格，需要解析
-        if (html.includes(stockId)) {
-            log(`MOPS找到 ${stockId} 的月營收資料`);
-            // 這裡需要實際解析 HTML，暫時返回標記
-            return { hasData: true, html: html };
-        }
-        
-        return null;
-    } catch (err) {
-        log(`MOPS月營收 失敗: ${err.message}`);
-        return null;
-    }
-}
-
-// 從證交所 OpenAPI 獲取月營收
-async function fetchTWSERevenue(stockId) {
-    log(`證交所月營收 請求中... (${stockId})`);
-    try {
-        // 嘗試從政府開放資料平台獲取
-        const url = `https://openapi.twse.com.tw/v1/company/revenue/${stockId}`;
-        
-        const response = await fetch(url);
-        if (!response.ok) {
-            log(`證交所月營收 HTTP錯誤: ${response.status}`);
-            return null;
-        }
-        
-        const data = await response.json();
-        if (data && Array.isArray(data) && data.length > 0) {
-            log(`證交所月營收 成功: ${data.length} 筆`);
-            return data;
-        }
-        
-        return null;
-    } catch (err) {
-        log(`證交所月營收 失敗: ${err.message}`);
-        return null;
-    }
-}
-
-// 從公開資訊觀測站獲取財務報表數據
-async function fetchMOPSFinancial(stockId, year, quarter) {
-    log(`MOPS財報 請求中... (${year} Q${quarter})`);
-    try {
-        // 公開資訊觀測站的財報查詢 URL（使用民國年）
-        const rocYear = year - 1911;
-        // 這裡需要根據實際的 MOPS API 或網頁結構來實現
-        // 目前先返回空數據，避免錯誤
-        log(`MOPS財報 功能待實現 (${stockId} ${year}Q${quarter})`);
-        return null;
-    } catch (err) {
-        log(`MOPS財報 失敗: ${err.message}`);
-        return null;
-    }
-}
-
-// 從 FinMind 獲取資料（帶重試）
+// 從 FinMind 獲取資料（使用 Netlify Function 代理）
 async function fetchFinmind(dataset, dataId = '', startDate = '', retries = 3) {
-    if (!TOKEN) {
+    if (!TOKEN && dataset !== 'TaiwanStockInfo') { 
         log(`FinMind ${dataset} 跳過（無 Token）`);
         return null;
     }
     
-    let url = `https://api.finmindtrade.com/api/v4/data?dataset=${dataset}`;
+    let url = `/.netlify/functions/fetch-finmind?dataset=${dataset}`;
     if (dataId) url += `&data_id=${dataId}`;
     if (startDate) url += `&start_date=${startDate}`;
-    url += `&token=${TOKEN}`;
+    if (TOKEN) url += `&token=${TOKEN}`;
     
-    log(`FinMind ${dataset} 請求中...`);
+    log(`FinMind ${dataset} 請求中 (via Proxy)...`);
     
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
             if (attempt > 1) log(`重試 ${attempt}/${retries}...`);
             
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超時
             
             const response = await fetch(url, { signal: controller.signal });
             clearTimeout(timeoutId);
@@ -533,12 +424,7 @@ async function fetchFinmind(dataset, dataId = '', startDate = '', retries = 3) {
                 return null;
             }
         } catch (err) {
-            if (err.name === 'AbortError') {
-                log(`超時 (第${attempt}次)`);
-            } else {
-                log(`失敗: ${err.message}`);
-            }
-            
+            log(`FinMind 失敗: ${err.message}`);
             if (attempt < retries) {
                 await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
             }
@@ -547,12 +433,10 @@ async function fetchFinmind(dataset, dataId = '', startDate = '', retries = 3) {
     return null;
 }
 
-// Yahoo Finance 備援
-// Yahoo Finance 備援 (使用 Netlify Function 代理)
+// Yahoo Finance 備援 (使用 Netlify Price Function 代理)
 async function fetchYahooWithProxy(symbol, logName) {
     log(`${logName} 請求中 (透過 Netlify Price Function 代理)...`);
     try {
-        // 呼叫我們新增的 fetch-price Function
         const apiUrl = `/.netlify/functions/fetch-price?id=${symbol}`;
         
         const response = await fetch(apiUrl);
@@ -776,7 +660,7 @@ document.getElementById('analyzeForm').onsubmit = async e => {
         let priceDataFinal = null;
         let priceSource = '';
         
-        // Yahoo (優先，因為有完整的歷史資料)
+        // Yahoo (優先，因為有完整的歷史資料，使用 Netlify Function 代理)
         const yahooPrice = await fetchYahooWithProxy(`${id}.TW`, '股價');
         if (yahooPrice?.chart?.result?.[0]) {
             priceDataFinal = yahooPrice;
@@ -829,19 +713,19 @@ document.getElementById('analyzeForm').onsubmit = async e => {
 
         if (!priceDataFinal) throw new Error('無法取得股價資料');
 
-        // 3. 獲取財報 - 多來源嘗試（新順序：證交所 → Yahoo Finance → FinMind）
+        // 3. 獲取財報 - 多來源嘗試（新順序：證交所(Proxy) → Yahoo Finance(Proxy) → FinMind(Proxy)）
         let finSource = '';
         let financialData = null;
         const defaultPeriod = '季'; // 預設區間
 
-        // 優先嘗試台灣證券交易所
+        // 優先嘗試台灣證券交易所 (透過 Netlify Proxy)
         log('=== 嘗試台灣證券交易所財報 ===');
         financialData = await fetchTWSEFinancials(id, defaultPeriod);
         if (financialData) {
             finSource = '台灣證券交易所';
         }
 
-        // 如果證交所沒有，嘗試 Yahoo Finance
+        // 如果證交所沒有，嘗試 Yahoo Finance (透過 Netlify Proxy)
         if (!financialData) {
             log('=== 嘗試 Yahoo Finance 財報 ===');
             financialData = await fetchYahooFinanceFinancials(id);
@@ -850,7 +734,7 @@ document.getElementById('analyzeForm').onsubmit = async e => {
             }
         }
 
-        // 如果 Yahoo Finance 也失敗，嘗試 FinMind
+        // 如果 Yahoo Finance 也失敗，嘗試 FinMind (透過 Netlify Proxy)
         if (!financialData && TOKEN) {
             log('=== 嘗試 FinMind 財報 ===');
             const fin = await fetchFinmind('TaiwanStockFinancialStatement', id, '2025-07-01');
@@ -1136,7 +1020,6 @@ document.getElementById('analyzeForm').onsubmit = async e => {
                             </tbody>
                         </table>
                         
-                        <!-- 算法說明 -->
                         <div class="explanation">
                             <h6>評分算法說明：</h6>
                             <div class="row">
