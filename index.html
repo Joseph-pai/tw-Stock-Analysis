@@ -277,87 +277,70 @@ async function fetchTWSEPrice(stockId) {
     } catch (err) { return null; }
 }
 
-// 獲取證交所財報 (多維度數據抓取)
+// 從 台灣證券交易所 (TWSE) 獲取財務數據 (使用 Netlify Function 代理)
 async function fetchTWSEFinancials(stockId, period) {
-    log(`證交所財報 請求中 (多維度數據分析)... (${stockId})`);
+    log(`證交所財報 請求中 (透過 Netlify Function 代理)... (${stockId})`);
     
-    // 重置緩存
-    financialCache = {
-        eps: { quarter: 'N/A', year: 'N/A' },
-        roe: { quarter: 'N/A', year: 'N/A' },
-        revenueGrowth: { month: 'N/A', quarter: 'N/A', year: 'N/A' },
-        profitMargin: { quarter: 'N/A', year: 'N/A' }
-    };
-
     try {
-        // 平行抓取 季報(EPS)、營益分析(毛利/ROE)、月營收(增率)
-        const [reportRes, ratioRes, monthlyRes] = await Promise.all([
-            fetch(`/.netlify/functions/fetch-twse?type=quarterly`),
-            fetch(`/.netlify/functions/fetch-twse?type=annual`),
-            fetch(`/.netlify/functions/fetch-twse?type=monthly`)
-        ]);
+        // 1. 抓取「綜合損益表」 (來源包含一般業、金控等，含 EPS)
+        const reportRes = await fetch(`/.netlify/functions/fetch-twse?type=quarterly`);
+        // 2. 抓取「營益分析表」 (含毛利率、營業利益率)
+        const ratioRes = await fetch(`/.netlify/functions/fetch-twse?type=annual`);
 
-        if (!reportRes.ok || !ratioRes.ok || !monthlyRes.ok) {
+        if (!reportRes.ok || !ratioRes.ok) {
             log(`證交所代理請求失敗`);
             return null;
         }
 
         const reportData = await reportRes.json();
         const ratioData = await ratioRes.json();
-        const monthlyData = await monthlyRes.json();
 
-        const findStock = (data) => data.find(item => (item.Code === stockId || item.公司代號 === stockId));
+        // 輔助函數：模糊搜尋物件中的值 (解決不同資料表欄位名稱不一致的問題)
         const findValue = (obj, keywords) => {
             if (!obj) return null;
             const keys = Object.keys(obj);
             for (const kw of keywords) {
+                // 精確或模糊匹配
                 const match = keys.find(k => k === kw || k.includes(kw));
                 if (match) return obj[match];
             }
             return null;
         };
 
-        const stockReport = findStock(reportData);   // 季報
-        const stockRatio = findStock(ratioData);     // 分析表
-        const stockMonthly = findStock(monthlyData); // 月營收
+        // 3. 在所有資料中尋找目標股票
+        const findStock = (data) => data.find(item => (item.Code === stockId || item.公司代號 === stockId));
+        
+        const stockReport = findStock(reportData);
+        const stockRatio = findStock(ratioData);
 
-        if (stockReport || stockRatio || stockMonthly) {
-            // 1. EPS
-            const epsVal = findValue(stockReport, ['基本每股盈餘', 'EPS']) || 'N/A';
-            financialCache.eps.quarter = epsVal;
-            financialCache.eps.year = epsVal; // 暫存相同，年報 API 若有可區分
+        if (stockReport || stockRatio) {
+            // debug: 印出找到的資料，方便除錯
+            if(stockReport) console.log('Report Data:', stockReport);
+            if(stockRatio) console.log('Ratio Data:', stockRatio);
 
-            // 2. ROE
-            const roeVal = findValue(stockRatio, ['權益報酬率', '純益率', '營業利益率']) || 'N/A';
-            financialCache.roe.quarter = roeVal;
-            financialCache.roe.year = roeVal;
-
-            // 3. 毛利率
-            const marginVal = findValue(stockRatio, ['毛利率']) || 'N/A';
-            financialCache.profitMargin.quarter = marginVal;
-            financialCache.profitMargin.year = marginVal;
-
-            // 4. 營收增率 (多維度)
-            const revMoM = findValue(stockMonthly, ['上月比較增減', '上月增減']);
-            const revYoY = findValue(stockMonthly, ['去年同月增減', '同月增減']); 
-            const revAcc = findValue(stockMonthly, ['累計營業收入-去年同期增減', '累計增減']);
-
-            financialCache.revenueGrowth.month = revYoY || 'N/A';       // 月: 單月年增率 (YoY)
-            financialCache.revenueGrowth.quarter = revMoM || 'N/A';     // 季: 暫用月增率 (MoM)
-            financialCache.revenueGrowth.year = revAcc || 'N/A';        // 年: 累計年增率
-
-            log(`數據更新: 單月YoY=${revYoY}%, 累計YoY=${revAcc}%`);
+            const result = {
+                // 損益表通常包含 "基本每股盈餘"
+                eps: findValue(stockReport, ['基本每股盈餘', 'EPS']) || 'N/A',
+                // 營益分析表通常包含 "毛利率"
+                grossProfitMargin: findValue(stockRatio, ['毛利率']) || 'N/A',
+                // 營益分析表可能不直接含 ROE，暫用 "純益率" 或 "營業利益率" 替代 ROE 顯示，或標示為 N/A
+                // 注意：TWSE Open Data 的營益分析表通常包含 "營業收入"、"毛利率"、"營業利益率"、"純益率"
+                roe: findValue(stockRatio, ['權益報酬率', '純益率']) || 'N/A', 
+                revenueGrowth: findValue(stockRatio, ['營業收入', '營收']) ? 'N/A' : 'N/A', // 營益表通常是數值非成長率，這裡暫時 N/A
+                period: period,
+                source: '台灣證券交易所 (via Proxy)'
+            };
             
-            // 更新 UI
-            updateFinancialUI();
-            
-            return { source: 'TWSE (Multi-period)' };
+            log(`TWSE 代理成功: EPS=${result.eps}, 毛利率=${result.grossProfitMargin}`);
+            return result;
         } else {
-            log(`TWSE 代理成功但未找到 ${stockId} 資料`);
+            log(`TWSE 代理成功但未找到 ${stockId} 的資料`);
             return null;
         }
+
     } catch (err) {
-        log(`證交所數據處理失敗: ${err.message}`);
+        log(`證交所財報代理 失敗: ${err.message}`);
+        console.error(err);
         return null;
     }
 }
