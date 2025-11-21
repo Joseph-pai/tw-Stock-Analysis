@@ -350,12 +350,12 @@ function processTWSEData(data, period) {
     return result;
 }
 
-// 從 Yahoo Finance 獲取財務數據
 // 從 Yahoo Finance 獲取財務數據 (使用 Netlify Function 代理)
 async function fetchYahooFinanceFinancials(stockId) {
     log(`Yahoo Finance 財報資料 請求中 (透過 Netlify Function 代理)... (${stockId})`);
     try {
         // 呼叫我們自己的 Netlify Function
+        // 假設您的 Function 名稱是 fetch-financials
         const apiUrl = `/.netlify/functions/fetch-financials?id=${stockId}`;
         
         const response = await fetch(apiUrl);
@@ -372,7 +372,6 @@ async function fetchYahooFinanceFinancials(stockId) {
             const financialData = {
                 // 從 Function 返回的 result 結構中提取數據
                 eps: result.defaultKeyStatistics?.trailingEps?.raw || 'N/A',
-                // ROE/增率/毛利率通常以小數形式返回，需要乘以 100
                 roe: result.financialData?.returnOnEquity?.raw ? result.financialData.returnOnEquity.raw * 100 : 'N/A',
                 revenueGrowth: result.financialData?.revenueGrowth?.raw ? result.financialData.revenueGrowth.raw * 100 : 'N/A',
                 grossProfitMargin: result.financialData?.grossMargins?.raw ? result.financialData.grossMargins.raw * 100 : 'N/A',
