@@ -524,33 +524,34 @@ async function fetchFinmind(dataset, dataId = '', startDate = '', retries = 3) {
 }
 
 // Yahoo Finance 備援
+// Yahoo Finance 備援 (使用 Netlify Function 代理)
 async function fetchYahooWithProxy(symbol, logName) {
-    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1y`;
-    const proxies = [
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
-        `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`
-    ];
-    
-    log(`${logName} Yahoo請求中...`);
-    
-    for (let i = 0; i < proxies.length; i++) {
-        try {
-            const response = await fetch(proxies[i]);
-            if (!response.ok) continue;
-            
-            const text = await response.text();
-            let data;
-            try { data = JSON.parse(text); } catch { continue; }
-            
-            if (data?.chart?.result?.[0]) {
-                log(`${logName} Yahoo成功！`);
-                return data;
-            }
-        } catch (err) {
-            log(`${logName} Yahoo方式${i+1}失敗`);
+    log(`${logName} 請求中 (透過 Netlify Price Function 代理)...`);
+    try {
+        // 呼叫我們新增的 fetch-price Function
+        const apiUrl = `/.netlify/functions/fetch-price?id=${symbol}`;
+        
+        const response = await fetch(apiUrl);
+
+        if (!response.ok) {
+            log(`${logName} Netlify Function 代理失敗: HTTP ${response.status}`);
+            return null;
         }
+        
+        const data = await response.json(); 
+        
+        if (data && data.chart?.result?.[0]) {
+            log(`${logName} Yahoo成功 ( via Function )！`);
+            return data;
+        }
+        
+        log(`${logName} Yahoo失敗: ${data?.error || '數據結構錯誤'}`);
+        return null;
+
+    } catch (err) {
+        log(`${logName} Netlify Function 呼叫失敗: ${err.message}`);
+        return null;
     }
-    return null;
 }
 
 // 權重調整函數 - 當某個權重改變時，自動調整其他權重
