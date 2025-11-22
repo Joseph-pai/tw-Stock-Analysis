@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v9)</title>
+    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v10)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -36,7 +36,7 @@
 <div class="container py-5">
 
     <h1 class="text-center mb-2">台灣股市終極專業分析器</h1>
-    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/22 累計營收 V9 • Netlify Functions 全代理架構</p>
+    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/22 累計營收 V10 • Netlify Functions 全代理架構</p>
 
     <div class="row justify-content-center mb-4">
         <div class="col-md-8">
@@ -288,7 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return null;
             };
 
-            const stockReport = findStock(reportData); // 包含 t187ap05_L 的資料
+            const stockReport = findStock(reportData); 
             const stockRatio = findStock(ratioData); 
             
             let stockMonthly = null;
@@ -316,14 +316,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 const fetchedMargin = findValue(stockRatio, ['毛利率', '營業毛利率']);
                 financialCache.profitMargin.quarter = fetchedMargin || 'N/A';
                 
-                // === 累計營收成長率 (Cumulative Revenue Growth) 邏輯 V9 修正版 ===
+                // === 累計營收成長率 (Cumulative Revenue Growth) 邏輯 V10 修正版 (使用月營收 T05ST10_IF 原始數據計算) ===
                 let cumulativeGrowthValue = 'N/A';
 
-                // 1. 從季度報告 (t187ap05_L) 尋找並計算
-                if (stockReport) {
+                // 1. 從月營收報告 (t05st10_if) 尋找並計算
+                // 月營收數據中包含了累計營收的原始數字，且欄位名稱與使用者提供的一致
+                if (stockMonthly) {
                     // 必須先獲取這兩個原始數據
-                    const currentCumulativeRevRaw = findValue(stockReport, ['累計營業收入-當月累計營收', '本期累計營業收入', '本年累計營業收入']);
-                    const previousCumulativeRevRaw = findValue(stockReport, ['累計營業收入-去年同期累計營收', '去年同期累計營業收入', '去年累計營業收入']);
+                    const currentCumulativeRevRaw = findValue(stockMonthly, ['累計營業收入-當月累計營收']);
+                    const previousCumulativeRevRaw = findValue(stockMonthly, ['累計營業收入-去年累計營收']); // *** 修正為正確欄位名稱 ***
 
                     if (currentCumulativeRevRaw && previousCumulativeRevRaw) {
                         // 移除千分位符號，轉換為浮點數
@@ -331,23 +332,28 @@ document.addEventListener('DOMContentLoaded', () => {
                         const previous = parseFloat(String(previousCumulativeRevRaw).replace(/,/g, ''));
                         
                         if (!isNaN(current) && !isNaN(previous) && previous !== 0) {
+                            // 2. 進行手動計算以滿足使用者要求
                             cumulativeGrowthValue = (((current - previous) / previous) * 100).toFixed(2);
-                            log(`*** 累計營收成長率：使用 t187ap05_L 數據手動計算。\n當月累計營收：${currentCumulativeRevRaw}，去年同期累計營收：${previousCumulativeRevRaw}。計算結果：${cumulativeGrowthValue}%`);
+                            log(`*** 累計營收成長率：使用月營收原始數據手動計算。\n當月累計營收：${currentCumulativeRevRaw}，去年累計營收：${previousCumulativeRevRaw}。計算結果：${cumulativeGrowthValue}%`);
                         } else {
-                            log('累計營收數據無效或去年同期為零，無法計算成長率。');
+                            log('月營收累計數據無效或去年同期為零，無法計算成長率。');
                         }
                     } else {
-                        log('未能在 t187ap05_L 資料中找到「累計營業收入-當月累計營收」或「累計營業收入-去年同期累計營收」欄位。');
+                        log('未能在月營收資料中找到「累計營業收入-當月累計營收」或「累計營業收入-去年累計營收」欄位。'); 
                     }
+                } else {
+                    log('未找到最新的月營收資料。');
                 }
                 
                 financialCache.revenueGrowth.year = cumulativeGrowthValue; 
+
+                // 月營收的月增率和季增率 (仍保留在月營收欄位，修正欄位優先順序以確保獲取)
+                // month: 月營收的年增率 (與去年同月比較)
+                financialCache.revenueGrowth.month = findValue(stockMonthly, ['營業收入-去年同月增減(%)', '去年同月增減', '同月增減', '增減百分比']) || 'N/A';
+                // quarter: 月營收的月增率 (與上月比較)
+                financialCache.revenueGrowth.quarter = findValue(stockMonthly, ['營業收入-上月比較增減(%)', '上月比較增減']) || 'N/A';
                 // === 累計營收成長率 邏輯結束 ===
 
-                // 月營收的月增率和季增率 (仍保留在月營收欄位)
-                financialCache.revenueGrowth.month = findValue(stockMonthly, ['去年同月增減', '同月增減', '增減百分比']) || 'N/A';
-                financialCache.revenueGrowth.quarter = findValue(stockMonthly, ['上月比較增減']) || 'N/A';
-                
                 log(`TWSE 數據更新: EPS(年)=${financialCache.eps.year}, ROE(年)=${financialCache.roe.year}, 累計營收成長率=${financialCache.revenueGrowth.year}%`);
                 return { source: 'TWSE (Multi-period)', ...financialCache }; 
             } else {
@@ -908,7 +914,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     labels: timestamps.map(t => new Date(t*1000).toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'})),
                     datasets: [
                         { label: name, data: closes, borderColor: '#00ff88', tension: 0.3, fill: false, pointRadius: 0 },
-                        { label: '大盤', data: marketData?.chart?.result[0].indicators.quote[0].close.slice(-closes.length)||[], borderColor: '#ff4444', tension: 0.3, fill: false, pointRadius: 0 }
+                        { label: '大盤', data: marketData?.chart?.result[0].indicators.quote[0].close.slice(-closes.length) || [], borderColor: '#ff4444', tension: 0.3, fill: false, pointRadius: 0 }
                     ]
                 },
                 options: { responsive: true, interaction: { mode: 'index', intersect: false }, plugins: { legend: { labels: { color: 'black' } } }, scales: { x: { ticks: { color: 'black' } }, y: { ticks: { color: 'black' } } } }
