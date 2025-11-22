@@ -11,23 +11,21 @@ exports.handler = async (event, context) => {
 
     const type = event.queryStringParameters.type; 
 
-    // 定義「全產業」資料來源 URL
+    // 定義「全產業」資料來源 URL (解決 N/A 問題的關鍵)
     const sources = {
-        // [季度資料] 綜合損益表 (來源：證交所 Open Data)
-        // 包含：一般業(ci)、金控(fh)、證券(bd)、保險(ins)
+        // [季度資料] 綜合損益表
         quarterly: [
-            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci', 
-            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_fh',
-            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd',
-            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins'
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci', // 一般
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_fh', // 金控
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd', // 證券
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins' // 保險
         ],
-        // [年度/分析資料] 財務比率分析
-        // 包含：一般業(A)、金控(B)、證券(C)、保險(D)
+        // [年度/分析資料] 財務比率
         annual: [
-            'https://openapi.twse.com.tw/v1/opendata/t187ap46_L', // 經營績效-一般
-            'https://openapi.twse.com.tw/v1/opendata/t187ap17_L'  // 營益分析彙總 (最常用)
+            'https://openapi.twse.com.tw/v1/opendata/t187ap17_L', // 營益分析
+            'https://openapi.twse.com.tw/v1/opendata/t187ap46_L'  // 經營績效
         ],
-        // [月營收資料]
+        // [月營收資料] 解決營收增率問題
         monthly: [
             'https://openapi.twse.com.tw/v1/opendata/t05st10_if'
         ]
@@ -40,15 +38,13 @@ exports.handler = async (event, context) => {
     }
 
     try {
-        // 平行抓取所有產業的資料表
+        // 平行抓取所有產業資料
         const requests = targetUrls.map(url => fetch(url).then(res => {
             if (!res.ok) return [];
             return res.json().catch(() => []);
         }).catch(() => []));
         
         const results = await Promise.all(requests);
-        
-        // 合併所有結果
         const combinedData = results.flat().filter(item => item && (item.Code || item.公司代號));
 
         return {
