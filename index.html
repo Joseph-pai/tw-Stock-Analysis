@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v10)</title>
+    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v11)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -36,7 +36,7 @@
 <div class="container py-5">
 
     <h1 class="text-center mb-2">台灣股市終極專業分析器</h1>
-    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/22 累計營收 V10 • Netlify Functions 全代理架構</p>
+    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/22 累計營收 V11 • Netlify Functions 全代理架構</p>
 
     <div class="row justify-content-center mb-4">
         <div class="col-md-8">
@@ -141,6 +141,9 @@ document.addEventListener('DOMContentLoaded', () => {
         revenueGrowth: { month: 'N/A', quarter: 'N/A', year: 'N/A' },
         profitMargin: { quarter: 'N/A', year: 'N/A' }
     };
+    
+    // 數據來源追蹤
+    let revenueSource = 'N/A';
 
     // 產業代碼對照表 (修正：新增 35-38, 91 等新代碼)
     const twseIndustryMap = {
@@ -209,6 +212,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return null;
     }
+    
+    /**
+     * Helper: 尋找並清理數值
+     * @param {Object} obj - 包含數據的物件
+     * @param {string[]} keywords - 尋找的關鍵字陣列
+     * @returns {string|null} 找到的值，或 null
+     */
+    const findValue = (obj, keywords) => {
+        if (!obj) return null;
+        const keys = Object.keys(obj);
+        for (const kw of keywords) {
+            const match = keys.find(k => k.includes(kw));
+            if (match) {
+                const val = obj[match];
+                // 檢查值是否為 NaN, null 或空字串
+                if (val !== null && val !== undefined && val !== '' && !isNaN(parseFloat(String(val).replace(/,/g, '')))) {
+                    return val;
+                }
+            }
+        }
+        return null;
+    };
+
+    /**
+     * Helper: 手動計算累計營收成長率
+     * @param {string|number} currentRevRaw - 當月累計營收原始值
+     * @param {string|number} previousRevRaw - 去年累計營收原始值
+     * @returns {string|null} 計算結果 (%.toFixed(2)) 或 null
+     */
+    const calculateCumulativeGrowth = (currentRevRaw, previousRevRaw) => {
+        if (currentRevRaw && previousRevRaw) {
+            const current = parseFloat(String(currentRevRaw).replace(/,/g, ''));
+            const previous = parseFloat(String(previousRevRaw).replace(/,/g, ''));
+            
+            if (!isNaN(current) && !isNaN(previous) && previous !== 0) {
+                // 公式：(當月累計 - 去年累計) / 去年累計 * 100
+                const growth = (((current - previous) / previous) * 100).toFixed(2);
+                return growth;
+            }
+        }
+        return null;
+    }
+
 
     async function fetchYahooWithProxy(symbol, logName) {
         log(`${logName} 請求中 (透過 Netlify Price Function 代理)...`);
@@ -239,6 +285,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return (data && Array.isArray(data) && data.length > 0) ? data : null;
         } catch (err) { return null; }
     }
+    
+    // ================= 財報獲取函數 (包含備援邏輯) =================
 
     async function fetchTWSEFinancials(stockId, period) {
         log(`證交所財報 請求中... (${stockId})`);
@@ -250,9 +298,10 @@ document.addEventListener('DOMContentLoaded', () => {
             revenueGrowth: { month: 'N/A', quarter: 'N/A', year: 'N/A' },
             profitMargin: { quarter: 'N/A', year: 'N/A' }
         };
+        revenueSource = 'N/A'; // 重置營收來源
 
         try {
-            // 這裡會通過 fetch-twse.js 代理抓取 TWSE 的三個 API (季度, 年報, 月營收)
+            // 抓取 TWSE 的三個 API (季度, 年報, 月營收)
             const [reportRes, ratioRes, monthlyRes] = await Promise.all([
                 fetch(`/.netlify/functions/fetch-twse?type=quarterly`), 
                 fetch(`/.netlify/functions/fetch-twse?type=annual`),    
@@ -260,38 +309,29 @@ document.addEventListener('DOMContentLoaded', () => {
             ]);
 
             if (!reportRes.ok || !ratioRes.ok || !monthlyRes.ok) {
-                log(`證交所代理請求失敗`);
-                return null;
+                log(`證交所代理請求失敗或不完整`);
+                // 仍繼續處理已獲得的數據，但月營收可能會缺失
             }
 
-            const reportData = await reportRes.json();
-            const ratioData = await ratioRes.json(); 
-            const monthlyData = await monthlyRes.json(); 
+            const reportData = reportRes.ok ? await reportRes.json() : null;
+            const ratioData = ratioRes.ok ? await ratioRes.json() : null; 
+            const monthlyData = monthlyRes.ok ? await monthlyRes.json() : null; 
 
-            // 尋找單一財務報表 (季度/年度) 的股票數據
-            const findStock = (data) => data.find(item => (String(item.Code) === stockId || String(item.公司代號) === stockId));
+            const findStock = (data) => data ? data.find(item => (String(item.Code) === stockId || String(item.公司代號) === stockId)) : null;
             
-            // 尋找欄位數值
-            const findValue = (obj, keywords) => {
-                if (!obj) return null;
-                const keys = Object.keys(obj);
-                for (const kw of keywords) {
-                    const match = keys.find(k => k.includes(kw));
-                    if (match) {
-                        const val = obj[match];
-                        // 檢查值是否為 NaN, null 或空字串
-                        if (val !== null && val !== undefined && val !== '' && !isNaN(parseFloat(String(val).replace(/,/g, '')))) {
-                            return val;
-                        }
-                    }
-                }
-                return null;
-            };
-
             const stockReport = findStock(reportData); 
             const stockRatio = findStock(ratioData); 
             
-            let stockMonthly = null;
+            // --- 核心財報指標 (EPS, ROE, Margin) ---
+            if (stockReport || stockRatio) {
+                financialCache.eps.year = findValue(stockReport, ['基本每股盈餘', 'EPS', '每股盈餘', '歸屬於母公司']) || 'N/A';
+                financialCache.roe.year = findValue(stockRatio, ['權益報酬率', 'ROE', '股東權益報酬率', '純益率']) || 'N/A';
+                financialCache.profitMargin.quarter = findValue(stockRatio, ['毛利率', '營業毛利率']) || 'N/A';
+            }
+
+
+            // --- 累計營收成長率 (TWSE 嘗試) ---
+            let stockMonthlyTWSE = null;
             if (monthlyData && monthlyData.length > 0) {
                 const filteredMonthly = monthlyData.filter(item => (String(item.Code) === stockId || String(item.公司代號) === stockId));
                 if (filteredMonthly.length > 0) {
@@ -300,65 +340,81 @@ document.addEventListener('DOMContentLoaded', () => {
                          const dateB = b.年月 || b.Date || '0';
                          return dateB.localeCompare(dateA); 
                      });
-                     stockMonthly = filteredMonthly[0];
+                     stockMonthlyTWSE = filteredMonthly[0];
                 }
             }
-            
-            if (stockReport || stockRatio || stockMonthly) {
-                // EPS & ROE (主要從 t187ap06_L/t187ap17_L 取得)
-                const fetchedEPS = findValue(stockReport, ['基本每股盈餘', 'EPS', '每股盈餘', '歸屬於母公司']);
-                financialCache.eps.year = fetchedEPS || 'N/A';
-                financialCache.eps.quarter = 'N/A'; 
 
-                financialCache.roe.year = findValue(stockRatio, ['權益報酬率', 'ROE', '股東權益報酬率', '純益率']) || 'N/A';
-                financialCache.roe.quarter = 'N/A';
-
-                const fetchedMargin = findValue(stockRatio, ['毛利率', '營業毛利率']);
-                financialCache.profitMargin.quarter = fetchedMargin || 'N/A';
+            if (stockMonthlyTWSE) {
+                const current = findValue(stockMonthlyTWSE, ['累計營業收入-當月累計營收']);
+                const previous = findValue(stockMonthlyTWSE, ['累計營業收入-去年累計營收']); 
+                const growth = calculateCumulativeGrowth(current, previous);
                 
-                // === 累計營收成長率 (Cumulative Revenue Growth) 邏輯 V10 修正版 (使用月營收 T05ST10_IF 原始數據計算) ===
-                let cumulativeGrowthValue = 'N/A';
+                if (growth) {
+                    financialCache.revenueGrowth.year = growth;
+                    revenueSource = 'TWSE 原始計算';
+                    log(`✓ 累計營收成長率 (TWSE) 成功！原始數據計算結果：${growth}%`);
+                } else {
+                    log('TWSE 月營收數據不足或無效，無法計算累計營收成長率。');
+                }
+                
+                // 月營收的月增率和季增率 (此處可沿用數據中的增減率)
+                financialCache.revenueGrowth.month = findValue(stockMonthlyTWSE, ['營業收入-去年同月增減(%)', '去年同月增減', '同月增減', '增減百分比']) || 'N/A';
+                financialCache.revenueGrowth.quarter = findValue(stockMonthlyTWSE, ['營業收入-上月比較增減(%)', '上月比較增減']) || 'N/A';
+            } else {
+                log('未找到最新的 TWSE 月營收資料。嘗試 FinMind 備援...');
+            }
 
-                // 1. 從月營收報告 (t05st10_if) 尋找並計算
-                if (stockMonthly) {
-                    // 必須先獲取這兩個原始數據：當月累計營收 與 去年累計營收
-                    const currentCumulativeRevRaw = findValue(stockMonthly, ['累計營業收入-當月累計營收']);
-                    const previousCumulativeRevRaw = findValue(stockMonthly, ['累計營業收入-去年累計營收']); 
+            // --- 累計營收成長率 (FinMind 備援) ---
+            if (financialCache.revenueGrowth.year === 'N/A' && TOKEN) {
+                log('啟動 FinMind 月營收備援...');
+                const finmindRev = await fetchFinmind('TaiwanStockMonthRevenue', stockId);
 
-                    if (currentCumulativeRevRaw && previousCumulativeRevRaw) {
-                        // 移除千分位符號，轉換為浮點數
-                        const current = parseFloat(String(currentCumulativeRevRaw).replace(/,/g, ''));
-                        const previous = parseFloat(String(previousCumulativeRevRaw).replace(/,/g, ''));
-                        
-                        if (!isNaN(current) && !isNaN(previous) && previous !== 0) {
-                            // 2. 進行手動計算：(當月累計 - 去年累計) / 去年累計 * 100
-                            cumulativeGrowthValue = (((current - previous) / previous) * 100).toFixed(2);
-                            log(`*** 累計營收成長率：使用月營收原始數據手動計算。\n當月累計營收：${currentCumulativeRevRaw}，去年累計營收：${previousCumulativeRevRaw}。計算結果：${cumulativeGrowthValue}%`);
-                        } else {
-                            log('月營收累計數據無效或去年同期為零，無法計算成長率。');
-                        }
+                if (finmindRev?.data && finmindRev.data.length > 0) {
+                    // 確保獲取最新一筆資料
+                    finmindRev.data.sort((a, b) => b.date.localeCompare(a.date));
+                    const latestFinmindRev = finmindRev.data[0];
+
+                    // FinMind 數據欄位：revenue_monthly (當月營收), revenue_month_cumulative (當月累計營收)
+                    // FinMind 欄位可能略有不同，但通常會提供年增率(growth_rate)或原始累積營收
+                    
+                    // 優先尋找 FinMind 的原始累計營收數據 (假設欄位名稱為 cumulative_revenue_this_year, cumulative_revenue_last_year)
+                    // 註：FinMind 的月營收 API 通常只提供當月營收和月增率
+                    
+                    // 由於 FinMind 的 v4 月營收 API 不一定包含「去年累計營收」的原始數據欄位。
+                    // 因此，我們檢查 FinMind 是否有提供「累計營收成長率」欄位作為替代計算（次優解）。
+                    
+                    const calculatedGrowth = latestFinmindRev.revenue_year_to_date_growth_rate || latestFinmindRev.rev_cumulative_YoY_percent || latestFinmindRev.YoY_percent; // 嘗試 FinMind 可能提供的欄位
+                    
+                    if (calculatedGrowth && !isNaN(parseFloat(calculatedGrowth))) {
+                         financialCache.revenueGrowth.year = (parseFloat(calculatedGrowth) * 100).toFixed(2);
+                         revenueSource = 'FinMind (累計YoY)';
+                         log(`✓ 累計營收成長率 (FinMind) 備援成功！使用 FinMind 提供的累計年增率。結果：${financialCache.revenueGrowth.year}%`);
+                    } else if (latestFinmindRev.revenue_month_cumulative && latestFinmindRev.last_year_revenue_month_cumulative) {
+                        // 這是最佳狀況：FinMind 提供了原始累計營收，我們可以手動計算
+                        const growth = calculateCumulativeGrowth(latestFinmindRev.revenue_month_cumulative, latestFinmindRev.last_year_revenue_month_cumulative);
+                         if(growth) {
+                            financialCache.revenueGrowth.year = growth;
+                            revenueSource = 'FinMind 原始計算';
+                            log(`✓ 累計營收成長率 (FinMind) 備援成功！原始數據計算結果：${growth}%`);
+                         } else {
+                            log('FinMind 數據不足或無效，無法計算累計營收成長率。');
+                         }
                     } else {
-                        log('未能在月營收資料中找到「累計營業收入-當月累計營收」或「累計營業收入-去年累計營收」欄位。'); 
+                         log('FinMind 月營收資料結構不包含累計營收相關數據。');
                     }
                 } else {
-                    log('未找到最新的月營收資料。');
+                    log('FinMind 月營收備援失敗。');
                 }
-                
-                financialCache.revenueGrowth.year = cumulativeGrowthValue; 
-
-                // 月營收的月增率和季增率 (此處可沿用數據中的增減率)
-                // month: 月營收的年增率 (與去年同月比較)
-                financialCache.revenueGrowth.month = findValue(stockMonthly, ['營業收入-去年同月增減(%)', '去年同月增減', '同月增減', '增減百分比']) || 'N/A';
-                // quarter: 月營收的月增率 (與上月比較)
-                financialCache.revenueGrowth.quarter = findValue(stockMonthly, ['營業收入-上月比較增減(%)', '上月比較增減']) || 'N/A';
-                // === 累計營收成長率 邏輯結束 ===
-
-                log(`TWSE 數據更新: EPS(年)=${financialCache.eps.year}, ROE(年)=${financialCache.roe.year}, 累計營收成長率=${financialCache.revenueGrowth.year}%`);
-                return { source: 'TWSE (Multi-period)', ...financialCache }; 
-            } else {
-                log(`TWSE 代理成功但未找到 ${stockId} 資料`);
-                return null;
+            } else if (financialCache.revenueGrowth.year === 'N/A' && !TOKEN) {
+                log('未設定 FinMind Token，跳過 FinMind 備援。');
             }
+            
+            // 記錄來源
+            const finalSource = revenueSource !== 'N/A' ? `TWSE+${revenueSource}` : 'TWSE';
+
+            log(`TWSE 數據更新: EPS(年)=${financialCache.eps.year}, ROE(年)=${financialCache.roe.year}, 累計營收成長率=${financialCache.revenueGrowth.year}% (來源: ${finalSource})`);
+            return { source: finalSource, ...financialCache }; 
+
         } catch (err) {
             log(`證交所數據處理失敗: ${err.message}`);
             return null;
@@ -373,19 +429,31 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const result = await response.json(); 
             if (result && !result.error) {
-                financialCache.eps.year = result.defaultKeyStatistics?.trailingEps?.raw || 'N/A';
-                financialCache.roe.year = result.financialData?.returnOnEquity?.raw ? result.financialData.returnOnEquity.raw * 100 : 'N/A';
-                
-                // 如果 TWSE 沒有累計營收，則使用 Yahoo 的年營收成長率 (作為備援)
-                if (financialCache.revenueGrowth.year === 'N/A') {
-                    financialCache.revenueGrowth.year = result.financialData?.revenueGrowth?.raw ? (result.financialData.revenueGrowth.raw * 100).toFixed(2) : 'N/A';
+                // 如果 TWSE/FinMind 失敗，使用 Yahoo 的年營收成長率作為最終備援
+                if (financialCache.revenueGrowth.year === 'N/A' && result.financialData?.revenueGrowth?.raw) {
+                    financialCache.revenueGrowth.year = (result.financialData.revenueGrowth.raw * 100).toFixed(2);
+                    revenueSource = 'Yahoo Finance (年增率)';
+                    log(`✓ 累計營收成長率 (Yahoo) 最終備援成功！結果：${financialCache.revenueGrowth.year}%`);
                 }
                 
-                financialCache.profitMargin.quarter = result.financialData?.grossMargins?.raw ? result.financialData.grossMargins.raw * 100 : 'N/A';
-                return { source: 'Yahoo Finance' };
+                // 優先使用 TWSE/FinMind 的數據，如果沒有才用 Yahoo 的
+                if (financialCache.eps.year === 'N/A') {
+                    financialCache.eps.year = result.defaultKeyStatistics?.trailingEps?.raw || 'N/A';
+                }
+                if (financialCache.roe.year === 'N/A') {
+                    financialCache.roe.year = result.financialData?.returnOnEquity?.raw ? (result.financialData.returnOnEquity.raw * 100).toFixed(2) : 'N/A';
+                }
+                if (financialCache.profitMargin.quarter === 'N/A') {
+                    financialCache.profitMargin.quarter = result.financialData?.grossMargins?.raw ? (result.financialData.grossMargins.raw * 100).toFixed(2) : 'N/A';
+                }
+                
+                return { source: `Yahoo Finance + ${revenueSource}` };
             }
             return null;
-        } catch (err) { return null; }
+        } catch (err) { 
+            log(`Yahoo 財報請求失敗: ${err.message}`);
+            return null; 
+        }
     }
 
     // ================= 資料載入邏輯 (檢查備援機制) =================
@@ -704,6 +772,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('loading').style.display = 'block';
         document.getElementById('result').style.display = 'none';
         document.getElementById('logContent').textContent = '';
+        
+        // 重置來源追蹤
+        revenueSource = 'N/A';
 
         try {
             let name = symbol;
@@ -717,13 +788,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!priceDataFinal && !TOKEN) { 
                 const twsePrice = await fetchTWSEPrice(symbol);
                 if (twsePrice) {
-                     priceDataFinal = { chart: { result: [{ timestamp: twsePrice.map(d => { const p=d.Date.split('/'); return new Date(`${+p[0]+1911}-${p[1]}-${p[2]}`).getTime()/1000; }), indicators: { quote: [{ close: twsePrice.map(d => parseFloat(d.Close.replace(/,/g,''))) }] } }] } };
+                     priceDataFinal = { chart: { result: [{ timestamp: twsePrice.map(d => { const p=d.Date.split('/'); return new Date(`${+p[0]+1911}-${p[1]}-${p[2]}`).getTime()/1000; }), indicators: { quote: [{ close: twsePrice.map(d => parseFloat(d.Close.replace(/,/g, ''))) }] } }] } };
                 }
             }
             if (!priceDataFinal) throw new Error('無法取得股價資料，請稍後再試');
 
+            // --- 財報數據獲取順序 ---
+            // 1. TWSE (包含 FinMind 備援邏輯)
             let financialData = await fetchTWSEFinancials(symbol, '季');
-            if (!financialData) financialData = await fetchYahooFinanceFinancials(symbol);
+            // 2. Yahoo Finance (最終備援)
+            if (!financialData || financialCache.eps.year === 'N/A' || financialCache.roe.year === 'N/A' || financialCache.profitMargin.quarter === 'N/A' || financialCache.revenueGrowth.year === 'N/A') {
+                 financialData = await fetchYahooFinanceFinancials(symbol);
+            }
             
             let newsRaw = null;
             if (TOKEN) newsRaw = await fetchFinmind('TaiwanStockNews', symbol, startDate);
@@ -790,7 +866,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let riskReason = '無重大風險 (0分)'; 
 
             // === 渲染 HTML ===
-            const finSource = financialData?.source || '無';
+            const finSource = `TWSE + FinMind + Yahoo (營收來源: ${revenueSource})`;
             
             document.getElementById('result').innerHTML = `
                 <div class="text-center mb-5">
