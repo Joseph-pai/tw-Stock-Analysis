@@ -4,11 +4,10 @@
   # Netlify Functions 的目錄
   functions = "netlify/functions"
 
-[functions]
-  # 僅保留 timeout 設定。
-  # Netlify 會自動使用最新的預設 Node.js runtime (目前為 nodejs20.x 或更高)，
-  # 避免語法錯誤。
-  timeout = 20 # 單位為秒 (Seconds)
+# 修正 Functions Timeout 語法錯誤: 必須使用 [functions."*"] Table 來設定
+[functions."*"]
+  # 設定所有 Functions 的執行時間上限為 20 秒 (修正您的錯誤)
+  timeout = 20
   
 # 設定 /api/* 請求代理到我們的 Functions 裡
 [[redirects]]
