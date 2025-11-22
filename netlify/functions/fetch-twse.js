@@ -1,52 +1,63 @@
 const fetch = require('node-fetch');
 
 exports.handler = async (event, context) => {
+    const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS'
+    };
+
+    if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers };
+
     const type = event.queryStringParameters.type; 
-    
-    // 定義資料來源 URL
+
+    // 定義「全產業」資料來源 URL
     const sources = {
-        // [季度資料] 綜合損益表 (含 EPS)
+        // [季度資料] 綜合損益表 (來源：證交所 Open Data)
+        // 包含：一般業(ci)、金控(fh)、證券(bd)、保險(ins)
         quarterly: [
-            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci',  // 一般產業
-            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_fh',  // 金控業
-            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd',  // 證券期貨
-            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins'  // 保險業
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci', 
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_fh',
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd',
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins'
         ],
-        // [年度/分析資料] 營益分析彙總表 (含 毛利率)
+        // [年度/分析資料] 財務比率分析
+        // 包含：一般業(A)、金控(B)、證券(C)、保險(D)
         annual: [
-            'https://openapi.twse.com.tw/v1/opendata/t187ap17_L'
+            'https://openapi.twse.com.tw/v1/opendata/t187ap46_L', // 經營績效-一般
+            'https://openapi.twse.com.tw/v1/opendata/t187ap17_L'  // 營益分析彙總 (最常用)
         ],
-        // [月營收資料] *** 新增此區塊以獲取月營收增率 ***
+        // [月營收資料]
         monthly: [
-            'https://openapi.twse.com.tw/v1/opendata/t05st10_if'      // 採IFRSs後之月營業收入資訊
+            'https://openapi.twse.com.tw/v1/opendata/t05st10_if'
         ]
     };
 
     const targetUrls = sources[type];
 
     if (!targetUrls) {
-        return { statusCode: 400, body: JSON.stringify({ error: 'Invalid type parameter' }) };
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid type' }) };
     }
 
     try {
-        console.log(`Fetching TWSE data for type: ${type}`);
-        
+        // 平行抓取所有產業的資料表
         const requests = targetUrls.map(url => fetch(url).then(res => {
-            if (!res.ok) throw new Error(`Failed to fetch ${url}`);
-            return res.json();
-        }));
-
+            if (!res.ok) return [];
+            return res.json().catch(() => []);
+        }).catch(() => []));
+        
         const results = await Promise.all(requests);
-        const mergedData = results.flat();
+        
+        // 合併所有結果
+        const combinedData = results.flat().filter(item => item && (item.Code || item.公司代號));
 
         return {
             statusCode: 200,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(mergedData)
+            headers,
+            body: JSON.stringify(combinedData),
         };
 
     } catch (error) {
-        console.error('TWSE Proxy Error:', error);
-        return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
+        return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
     }
 };
