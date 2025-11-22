@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Optimized)</title>
+    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Precise Fix)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -29,7 +29,7 @@
         .period-select { width: 110px; font-size: 0.9rem; cursor: pointer; }
         .financial-period { background-color: rgba(255, 255, 255, 0.1); padding: 10px; border-radius: 5px; margin-bottom: 10px; }
         .basis-box { background: rgba(0,0,0,0.3); border-left: 4px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 4px; }
-        /* 新增：確保表格內容垂直置中 */
+        /* 面向欄位垂直置中 */
         td, th { vertical-align: middle; }
     </style>
 </head>
@@ -135,7 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let TOKEN = '';
     try { TOKEN = localStorage.getItem('joseph_pai_token_2025') || ''; } catch(e) {}
 
-    // 財務數據緩存 (這就是您提到的「數據矩陣」，所有維度的數據都會先存在這裡)
+    // 財務數據緩存 (矩陣)
     let financialCache = {
         eps: { quarter: 'N/A', year: 'N/A' },
         roe: { quarter: 'N/A', year: 'N/A' },
@@ -282,11 +282,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { return null; }
     }
 
-    // 獲取證交所財報 (多維度矩陣緩存)
+    // 獲取證交所財報 (修正邏輯：解決 N/A 與 EPS 錯置)
     async function fetchTWSEFinancials(stockId, period) {
         log(`證交所財報 請求中... (${stockId})`);
         
-        // 初始化矩陣
+        // 重置緩存
         financialCache = {
             eps: { quarter: 'N/A', year: 'N/A' },
             roe: { quarter: 'N/A', year: 'N/A' },
@@ -296,9 +296,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const [reportRes, ratioRes, monthlyRes] = await Promise.all([
-                fetch(`/.netlify/functions/fetch-twse?type=quarterly`),
-                fetch(`/.netlify/functions/fetch-twse?type=annual`),
-                fetch(`/.netlify/functions/fetch-twse?type=monthly`)
+                fetch(`/.netlify/functions/fetch-twse?type=quarterly`), // 季報 (EPS)
+                fetch(`/.netlify/functions/fetch-twse?type=annual`),    // 分析表 (ROE, 營收增率)
+                fetch(`/.netlify/functions/fetch-twse?type=monthly`)    // 月營收
             ]);
 
             if (!reportRes.ok || !ratioRes.ok || !monthlyRes.ok) {
@@ -311,8 +311,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const monthlyData = await monthlyRes.json();
 
             const findStock = (data) => data.find(item => (String(item.Code) === stockId || String(item.公司代號) === stockId));
-            
-            // 擴展模糊搜尋關鍵字
             const findValue = (obj, keywords) => {
                 if (!obj) return null;
                 const keys = Object.keys(obj);
@@ -324,28 +322,39 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             const stockReport = findStock(reportData);
-            const stockRatio = findStock(ratioData);
+            const stockRatio = findStock(ratioData); // 這張表包含 營收成長率, 權益報酬率
             const stockMonthly = findStock(monthlyData);
 
             if (stockReport || stockRatio || stockMonthly) {
-                // 1. EPS
-                financialCache.eps.quarter = findValue(stockReport, ['基本每股盈餘', 'EPS', '每股盈餘', '歸屬於母公司']) || 'N/A';
-                financialCache.eps.year = financialCache.eps.quarter; 
+                // 1. EPS (來自季報，通常是累積數值，所以優先放 year)
+                // 台積電 46.75 是 Q3 累計，放 year 正確
+                const fetchedEPS = findValue(stockReport, ['基本每股盈餘', 'EPS', '每股盈餘', '歸屬於母公司']);
+                financialCache.eps.year = fetchedEPS || 'N/A';
+                // 單季 EPS 若無法計算，暫時設為 N/A 或留空，避免誤導
+                financialCache.eps.quarter = 'N/A'; 
 
-                // 2. ROE (優先從財務比率表取值，若無則 N/A)
-                financialCache.roe.quarter = findValue(stockRatio, ['權益報酬率', 'ROE', '股東權益報酬率']) || 'N/A';
-                financialCache.roe.year = financialCache.roe.quarter;
+                // 2. ROE (來自分析表，通常是累計/年化)
+                // 台積電 ROE 34.12 是年化/累計，放 year
+                financialCache.roe.year = findValue(stockRatio, ['權益報酬率', 'ROE', '股東權益報酬率']) || 'N/A';
+                financialCache.roe.quarter = 'N/A'; // 單季 ROE API 未提供
 
-                // 3. 毛利率
-                financialCache.profitMargin.quarter = findValue(stockRatio, ['毛利率', '營業毛利率']) || 'N/A';
-                financialCache.profitMargin.year = financialCache.profitMargin.quarter;
-
-                // 4. 營收增率 (月營收表)
+                // 3. 毛利率 (來自分析表，通常較穩定)
+                // 台積電 59.45
+                const fetchedMargin = findValue(stockRatio, ['毛利率', '營業毛利率']);
+                financialCache.profitMargin.quarter = fetchedMargin || 'N/A';
+                
+                // 4. 營收增率
+                // 月增率/單月年增率 (來自月營收表)
                 financialCache.revenueGrowth.month = findValue(stockMonthly, ['去年同月增減', '同月增減', '增減百分比']) || 'N/A';
-                financialCache.revenueGrowth.quarter = findValue(stockMonthly, ['上月比較增減', '上月增減']) || 'N/A';
-                financialCache.revenueGrowth.year = findValue(stockMonthly, ['累計營業收入-去年同期增減', '累計增減', '累計增減百分比']) || 'N/A';
+                
+                // 累計營收年增率 (來自分析表或月營收累計)
+                // 台積電 6.77% 可能來自 T187AP17_L 的營業收入成長率，這通常是 YTD
+                financialCache.revenueGrowth.year = findValue(stockRatio, ['營業收入成長率', '營收成長率']) || findValue(stockMonthly, ['累計營業收入-去年同期增減']) || 'N/A';
+                
+                // 季增率 (API 無直接數據，暫用月增率替代或 N/A)
+                financialCache.revenueGrowth.quarter = findValue(stockMonthly, ['上月比較增減']) || 'N/A';
 
-                log(`TWSE 數據更新: EPS=${financialCache.eps.quarter}, ROE=${financialCache.roe.quarter}, 營收月增率=${financialCache.revenueGrowth.month}%`);
+                log(`TWSE 數據抓取成功: EPS(年)=${financialCache.eps.year}, ROE(年)=${financialCache.roe.year}, 毛利=${financialCache.profitMargin.quarter}`);
                 return { source: 'TWSE (Multi-period)', ...financialCache }; 
             } else {
                 log(`TWSE 代理成功但未找到 ${stockId} 資料`);
@@ -366,9 +375,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const result = await response.json(); 
             if (result && !result.error) {
-                financialCache.eps.quarter = result.defaultKeyStatistics?.trailingEps?.raw || 'N/A';
-                financialCache.roe.quarter = result.financialData?.returnOnEquity?.raw ? result.financialData.returnOnEquity.raw * 100 : 'N/A';
-                financialCache.revenueGrowth.month = result.financialData?.revenueGrowth?.raw ? result.financialData.revenueGrowth.raw * 100 : 'N/A';
+                financialCache.eps.year = result.defaultKeyStatistics?.trailingEps?.raw || 'N/A';
+                financialCache.roe.year = result.financialData?.returnOnEquity?.raw ? result.financialData.returnOnEquity.raw * 100 : 'N/A';
+                financialCache.revenueGrowth.year = result.financialData?.revenueGrowth?.raw ? result.financialData.revenueGrowth.raw * 100 : 'N/A';
                 financialCache.profitMargin.quarter = result.financialData?.grossMargins?.raw ? result.financialData.grossMargins.raw * 100 : 'N/A';
                 return { source: 'Yahoo Finance' };
             }
@@ -376,33 +385,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { return null; }
     }
 
-    async function fetchFinmind(dataset, dataId = '', startDate = '', retries = 3) {
-        if (!TOKEN && dataset !== 'TaiwanStockInfo') return null;
-        let url = `/.netlify/functions/fetch-finmind?dataset=${dataset}`;
-        if (dataId) url += `&data_id=${dataId}`;
-        if (startDate) url += `&start_date=${startDate}`;
-        if (TOKEN) url += `&token=${TOKEN}`;
-        
-        for (let attempt = 1; attempt <= retries; attempt++) {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000);
-                const response = await fetch(url, { signal: controller.signal });
-                clearTimeout(timeoutId);
-                if (!response.ok) {
-                    if (attempt < retries) { await new Promise(r => setTimeout(r, 1000 * attempt)); continue; }
-                    return null;
-                }
-                const data = await response.json();
-                if (data.status === 200 && data.data) return data;
-            } catch (err) { if (attempt < retries) await new Promise(r => setTimeout(r, 1000 * attempt)); }
-        }
-        return null;
-    }
-
     // ================= UI 更新 =================
 
-    // 更新表格數值 (含單位與 N/A 處理)
+    // 更新表格數值
     function updateFinancialUI() {
         const getVal = (sel, key) => {
             const el = document.querySelector(`.period-select[data-type="${sel}"]`);
@@ -420,15 +405,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const setUI = (id, val, suffix) => {
             const displayEl = document.getElementById(id);
-            const inputEl = document.getElementById(id.replace('display', 'manual')); // 對應手動輸入框
-            
-            // 更新顯示數值 (含單位)
+            const inputEl = document.getElementById(id.replace('display', 'manual'));
             if (displayEl) displayEl.textContent = isNaN(val) ? 'N/A' : `${val.toFixed(2)}${suffix}`;
-            
-            // 清空手動輸入框，除非用戶已經輸入了值
+            // 手動輸入框預設為空
             if (inputEl && inputEl.value === '') {
-                inputEl.value = ''; // 確保為空
-                inputEl.placeholder = ''; // 不顯示佔位符
+                inputEl.value = ''; 
+                inputEl.placeholder = ''; 
             }
         };
 
@@ -444,18 +426,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const margin = getVal('margin', 'profitMargin');
         setUI('displayMargin', margin, '%');
 
-        // 這裡只計算，不強制覆蓋手動輸入的值
         calculateBasicScoreFromManualInput();
     }
 
     function setupPeriodChangeListeners() {
         document.querySelectorAll('.period-select').forEach(select => {
-            // 當下拉選單改變時，自動更新對應數值
             select.onchange = updateFinancialUI;
         });
     }
     
-    // 這是主動點擊按鈕觸發的函數
     window.calculateBasicScoreFromManualInput = function() {
         const getVal = (sel, key) => {
             const el = document.querySelector(`.period-select[data-type="${sel}"]`);
@@ -487,39 +466,40 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // 1. EPS (30%)
         if (!isNaN(epsInput)) {
-            if (epsInput >= 8) { basicScore += 30; reasons.push(`EPS ${epsInput} ≥ 8 (+30分)`); }
-            else if (epsInput >= 5) { basicScore += 25; reasons.push(`EPS ${epsInput} ≥ 5 (+25分)`); }
-            else if (epsInput >= 3) { basicScore += 18; reasons.push(`EPS ${epsInput} ≥ 3 (+18分)`); }
-            else if (epsInput >= 1) { basicScore += 10; reasons.push(`EPS ${epsInput} ≥ 1 (+10分)`); }
-            else if (epsInput >= 0) { basicScore += 5; reasons.push(`EPS ${epsInput} ≥ 0 (+5分)`); }
-            else { basicScore -= 15; reasons.push(`EPS ${epsInput} < 0 (-15分)`); }
+            if (epsInput >= 8) { basicScore += 30; reasons.push(`EPS ${epsInput.toFixed(2)} ≥ 8 (+30分)`); }
+            else if (epsInput >= 5) { basicScore += 25; reasons.push(`EPS ${epsInput.toFixed(2)} ≥ 5 (+25分)`); }
+            else if (epsInput >= 3) { basicScore += 18; reasons.push(`EPS ${epsInput.toFixed(2)} ≥ 3 (+18分)`); }
+            else if (epsInput >= 1) { basicScore += 10; reasons.push(`EPS ${epsInput.toFixed(2)} ≥ 1 (+10分)`); }
+            else if (epsInput >= 0) { basicScore += 5; reasons.push(`EPS ${epsInput.toFixed(2)} ≥ 0 (+5分)`); }
+            else { basicScore -= 15; reasons.push(`EPS ${epsInput.toFixed(2)} < 0 (-15分)`); }
         } else { reasons.push('EPS 無數據 (0分)'); }
 
         // 2. ROE (30%)
         if (!isNaN(roeInput)) {
-            if (roeInput >= 15) { basicScore += 30; reasons.push(`ROE ${roeInput}% ≥ 15% (+30分)`); }
-            else if (roeInput >= 10) { basicScore += 20; reasons.push(`ROE ${roeInput}% ≥ 10% (+20分)`); }
-            else if (roeInput >= 5) { basicScore += 10; reasons.push(`ROE ${roeInput}% ≥ 5% (+10分)`); }
-            else if (roeInput > 0) { basicScore += 5; reasons.push(`ROE ${roeInput}% > 0% (+5分)`); }
-            else { basicScore -= 10; reasons.push(`ROE ${roeInput}% ≤ 0% (-10分)`); }
+            if (roeInput >= 15) { basicScore += 30; reasons.push(`ROE ${roeInput.toFixed(2)}% ≥ 15% (+30分)`); }
+            else if (roeInput >= 10) { basicScore += 20; reasons.push(`ROE ${roeInput.toFixed(2)}% ≥ 10% (+20分)`); }
+            else if (roeInput >= 5) { basicScore += 10; reasons.push(`ROE ${roeInput.toFixed(2)}% ≥ 5% (+10分)`); }
+            else if (roeInput > 0) { basicScore += 5; reasons.push(`ROE ${roeInput.toFixed(2)}% > 0% (+5分)`); }
+            else { basicScore -= 10; reasons.push(`ROE ${roeInput.toFixed(2)}% ≤ 0% (-10分)`); }
         } else { reasons.push('ROE 無數據 (0分)'); }
 
         // 3. 營收增率 (30%)
         if (!isNaN(revenueGrowthInput)) {
-            if (revenueGrowthInput >= 30) { basicScore += 30; reasons.push(`增率 ${revenueGrowthInput}% ≥ 30% (+30分)`); }
-            else if (revenueGrowthInput >= 10) { basicScore += 20; reasons.push(`增率 ${revenueGrowthInput}% ≥ 10% (+20分)`); }
-            else if (revenueGrowthInput > 0) { basicScore += 10; reasons.push(`增率 ${revenueGrowthInput}% > 0% (+10分)`); }
-            else { basicScore -= 10; reasons.push(`增率 ${revenueGrowthInput}% ≤ 0% (-10分)`); }
+            if (revenueGrowthInput >= 30) { basicScore += 30; reasons.push(`增率 ${revenueGrowthInput.toFixed(2)}% ≥ 30% (+30分)`); }
+            else if (revenueGrowthInput >= 10) { basicScore += 20; reasons.push(`增率 ${revenueGrowthInput.toFixed(2)}% ≥ 10% (+20分)`); }
+            else if (revenueGrowthInput > 0) { basicScore += 10; reasons.push(`增率 ${revenueGrowthInput.toFixed(2)}% > 0% (+10分)`); }
+            else { basicScore -= 10; reasons.push(`增率 ${revenueGrowthInput.toFixed(2)}% ≤ 0% (-10分)`); }
         } else { reasons.push('增率 無數據 (0分)'); }
 
         // 4. 毛利率 (10%)
         if (!isNaN(profitMarginInput) && profitMarginInput > 0) {
-            if (profitMarginInput >= 50) { basicScore += 10; reasons.push(`毛利 ${profitMarginInput}% ≥ 50% (+10分)`); }
-            else if (profitMarginInput >= 20) { basicScore += 5; reasons.push(`毛利 ${profitMarginInput}% ≥ 20% (+5分)`); }
-            else { reasons.push(`毛利 ${profitMarginInput}% < 20% (0分)`); }
+            if (profitMarginInput >= 50) { basicScore += 10; reasons.push(`毛利 ${profitMarginInput.toFixed(2)}% ≥ 50% (+10分)`); }
+            else if (profitMarginInput >= 20) { basicScore += 5; reasons.push(`毛利 ${profitMarginInput.toFixed(2)}% ≥ 20% (+5分)`); }
+            else { reasons.push(`毛利 ${profitMarginInput.toFixed(2)}% < 20% (0分)`); }
         } else { reasons.push('毛利 無數據 (0分)'); }
         
         const weight = weights.basic || 29;
+        // 正規化基本面分數
         const finalBasicScore = Math.max(-weight, Math.min(weight, Math.round(basicScore / 100 * weight)));
         
         const basicScoreEl = document.getElementById('score_basic');
@@ -528,7 +508,6 @@ document.addEventListener('DOMContentLoaded', () => {
             basicScoreEl.className = `badge ${finalBasicScore>=0?'badge-pos':'badge-neg'} fs-5`;
         }
         
-        // 更新說明欄位 (顯示得分依據)
         const descEl = document.querySelector('#scoreTable tbody tr:nth-child(1) td:nth-child(4)');
         if (descEl) descEl.innerHTML = `<small>${reasons.join('<br>')}</small>`;
         
@@ -574,8 +553,10 @@ document.addEventListener('DOMContentLoaded', () => {
             risk: getScore('score_risk')
         };
 
-        const total = Math.round(s.basic + s.technical + s.market + s.news + s.risk);
-        const final = Math.max(-100, Math.min(100, total)); 
+        // 計算總分並縮放到 -30 ~ +30
+        const total = s.basic + s.technical + s.market + s.news + s.risk;
+        const final = Math.max(-30, Math.min(30, Math.round(total * 0.3))); 
+        
         const color = final >= 0 ? 'text-success' : 'text-danger';
         const finalEl = document.getElementById('finalScore');
         if (finalEl) finalEl.innerHTML = `<h1 class="score-big ${color}">${final >= 0 ? '+' : ''}${final}%</h1>`;
@@ -641,16 +622,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const price = closes.at(-1).toFixed(2);
             const risePercent = closes.length >= 2 ? ((closes.at(-1) - closes[0]) / closes[0] * 100).toFixed(2) : 0;
             
-            // 技術面
+            // 技術面 (30%)
             const techW = weights.technical || 30;
             let techScore = 0;
-            let techReason = '區間震盪';
+            let techReason = '區間震盪 (0分)';
             if (risePercent >= 30) { techScore = techW; techReason = `暴漲 ${risePercent}% (滿分)`; }
             else if (risePercent >= 15) { techScore = Math.round(techW * 0.8); techReason = `大漲 ${risePercent}%`; }
             else if (risePercent >= 5) { techScore = Math.round(techW * 0.4); techReason = `上漲 ${risePercent}%`; }
             else if (risePercent < -10) { techScore = -Math.round(techW * 0.8); techReason = `重挫 ${risePercent}%`; }
 
-            // 大盤比較
+            // 大盤比較 (19%)
             const marketW = weights.market || 19;
             let marketScore = 0; 
             let marketReason = '無資料';
@@ -666,10 +647,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 else { marketScore = -Math.round(marketW * 0.6); marketReason = `落後 ${beat}%`; }
             }
 
-            // 新聞
+            // 新聞 (14%)
             const newsW = weights.news || 14;
             let newsScore = 0;
-            let newsReason = '無新聞';
+            let newsReason = '無新聞 (0分)';
             if (newsRaw?.data?.length > 0) {
                 let sentiment = 0;
                 newsRaw.data.slice(0,30).forEach(n => {
@@ -681,10 +662,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 else { newsScore = -Math.round(newsW * 0.5); newsReason = `情緒偏空 (${sentiment})`; }
             }
             
-            // 風險面
-            const riskW = weights.risk || 9;
+            // 風險面 (8%)
+            const riskW = weights.risk || 8;
             let riskScore = 0;
-            let riskReason = '無重大風險'; 
+            let riskReason = '無重大風險 (0分)'; 
 
             // === 渲染 HTML ===
             const finSource = financialData?.source || '無';
@@ -708,25 +689,25 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <tbody>
                                     <tr>
                                         <td>EPS</td>
-                                        <td><select class="form-select period-select" data-type="eps"><option value="季">季</option><option value="年">年</option></select></td>
+                                        <td><select class="form-select period-select" data-type="eps"><option value="季">季</option><option value="年" selected>年</option></select></td>
                                         <td class="fw-bold fs-5" id="displayEps">N/A</td>
                                         <td class="manual-input-cell"><input type="number" id="manualEps" class="form-control manual-input" step="0.01"></td>
                                     </tr>
                                     <tr>
                                         <td>ROE</td>
-                                        <td><select class="form-select period-select" data-type="roe"><option value="季">季</option><option value="年">年</option></select></td>
+                                        <td><select class="form-select period-select" data-type="roe"><option value="季">季</option><option value="年" selected>年</option></select></td>
                                         <td class="fs-5" id="displayRoe">N/A</td>
                                         <td class="manual-input-cell"><input type="number" id="manualRoe" class="form-control manual-input" step="0.1"></td>
                                     </tr>
                                     <tr>
                                         <td>營收增率</td>
-                                        <td><select class="form-select period-select" data-type="revenue"><option value="月">月</option><option value="季">季</option><option value="年">年</option></select></td>
+                                        <td><select class="form-select period-select" data-type="revenue"><option value="月">月</option><option value="季">季</option><option value="年" selected>年</option></select></td>
                                         <td class="fs-5" id="displayRevenue">N/A</td>
                                         <td class="manual-input-cell"><input type="number" id="manualRevenueGrowth" class="form-control manual-input" step="0.1"></td>
                                     </tr>
                                     <tr>
                                         <td>毛利率</td>
-                                        <td><select class="form-select period-select" data-type="margin"><option value="季">季</option><option value="年">年</option></select></td>
+                                        <td><select class="form-select period-select" data-type="margin"><option value="季" selected>季</option></select></td>
                                         <td class="fs-5" id="displayMargin">N/A</td>
                                         <td class="manual-input-cell"><input type="number" id="manualProfitMargin" class="form-control manual-input" step="0.1"></td>
                                     </tr>
