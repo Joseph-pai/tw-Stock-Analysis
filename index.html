@@ -320,11 +320,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 let cumulativeGrowthValue = 'N/A';
 
                 // 1. 從月營收報告 (t05st10_if) 尋找並計算
-                // 月營收數據中包含了累計營收的原始數字，且欄位名稱與使用者提供的一致
                 if (stockMonthly) {
-                    // 必須先獲取這兩個原始數據
+                    // 必須先獲取這兩個原始數據：當月累計營收 與 去年累計營收
                     const currentCumulativeRevRaw = findValue(stockMonthly, ['累計營業收入-當月累計營收']);
-                    const previousCumulativeRevRaw = findValue(stockMonthly, ['累計營業收入-去年累計營收']); // *** 修正為正確欄位名稱 ***
+                    const previousCumulativeRevRaw = findValue(stockMonthly, ['累計營業收入-去年累計營收']); 
 
                     if (currentCumulativeRevRaw && previousCumulativeRevRaw) {
                         // 移除千分位符號，轉換為浮點數
@@ -332,7 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const previous = parseFloat(String(previousCumulativeRevRaw).replace(/,/g, ''));
                         
                         if (!isNaN(current) && !isNaN(previous) && previous !== 0) {
-                            // 2. 進行手動計算以滿足使用者要求
+                            // 2. 進行手動計算：(當月累計 - 去年累計) / 去年累計 * 100
                             cumulativeGrowthValue = (((current - previous) / previous) * 100).toFixed(2);
                             log(`*** 累計營收成長率：使用月營收原始數據手動計算。\n當月累計營收：${currentCumulativeRevRaw}，去年累計營收：${previousCumulativeRevRaw}。計算結果：${cumulativeGrowthValue}%`);
                         } else {
@@ -347,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 financialCache.revenueGrowth.year = cumulativeGrowthValue; 
 
-                // 月營收的月增率和季增率 (仍保留在月營收欄位，修正欄位優先順序以確保獲取)
+                // 月營收的月增率和季增率 (此處可沿用數據中的增減率)
                 // month: 月營收的年增率 (與去年同月比較)
                 financialCache.revenueGrowth.month = findValue(stockMonthly, ['營業收入-去年同月增減(%)', '去年同月增減', '同月增減', '增減百分比']) || 'N/A';
                 // quarter: 月營收的月增率 (與上月比較)
