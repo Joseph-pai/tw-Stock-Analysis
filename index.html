@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v7)</title>
+    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v8)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -36,7 +36,7 @@
 <div class="container py-5">
 
     <h1 class="text-center mb-2">台灣股市終極專業分析器</h1>
-    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/22 累計營收 V7 • Netlify Functions 全代理架構</p>
+    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/22 累計營收 V8 • Netlify Functions 全代理架構</p>
 
     <div class="row justify-content-center mb-4">
         <div class="col-md-8">
@@ -252,10 +252,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             // 這裡會通過 fetch-twse.js 代理抓取 TWSE 的三個 API (季度, 年報, 月營收)
+            // quarterly 現在包含 t187ap05_L
             const [reportRes, ratioRes, monthlyRes] = await Promise.all([
                 fetch(`/.netlify/functions/fetch-twse?type=quarterly`), 
                 fetch(`/.netlify/functions/fetch-twse?type=annual`),    
-                fetch(`/.netlify/functions/fetch-twse?type=monthly`)    // 月營收數據
+                fetch(`/.netlify/functions/fetch-twse?type=monthly`)    
             ]);
 
             if (!reportRes.ok || !ratioRes.ok || !monthlyRes.ok) {
@@ -287,16 +288,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 return null;
             };
 
-            const stockReport = findStock(reportData);
+            const stockReport = findStock(reportData); // 包含 t187ap05_L 的資料
             const stockRatio = findStock(ratioData); 
             
             let stockMonthly = null;
             if (monthlyData && monthlyData.length > 0) {
-                // 1. 過濾出目標股票代碼的所有記錄
                 const filteredMonthly = monthlyData.filter(item => (String(item.Code) === stockId || String(item.公司代號) === stockId));
-                
                 if (filteredMonthly.length > 0) {
-                     // 2. 根據 '年月' 欄位降序排序，確保最新的數據在第一位
                      filteredMonthly.sort((a, b) => {
                          const dateA = a.年月 || a.Date || '0';
                          const dateB = b.年月 || b.Date || '0';
@@ -307,6 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             if (stockReport || stockRatio || stockMonthly) {
+                // EPS & ROE (主要從 t187ap06_L/t187ap17_L 取得)
                 const fetchedEPS = findValue(stockReport, ['基本每股盈餘', 'EPS', '每股盈餘', '歸屬於母公司']);
                 financialCache.eps.year = fetchedEPS || 'N/A';
                 financialCache.eps.quarter = 'N/A'; 
@@ -317,43 +316,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 const fetchedMargin = findValue(stockRatio, ['毛利率', '營業毛利率']);
                 financialCache.profitMargin.quarter = fetchedMargin || 'N/A';
                 
-                // === 累計營收年增率 (Year-over-Year Cumulative Revenue Growth) 邏輯 V7 ===
-                
-                // 1. 嘗試抓取 API 已經計算好的百分比
-                let cumulativeYoYValue = findValue(stockMonthly, [
-                    '累計營收較去年同期增減(%)',      
-                    '累計營收較去年同期增減百分比',  
-                    '累計增減百分比',                   
-                    '累計營業收入_去年同期增減',
-                    '累計營收較去年同期增減', 
-                    '累計營業收入-去年同期增減', 
-                    '累計增減', 
-                    '累計'
-                ]);
+                // === 累計營收成長率 (Cumulative Revenue Growth) 邏輯 V8 ===
+                let cumulativeGrowthValue = 'N/A';
 
-                // 2. 如果計算好的百分比為空或無效，嘗試手動計算 (V7 新增備援)
-                if (!cumulativeYoYValue || isNaN(parseFloat(cumulativeYoYValue))) {
-                    const currentCumulativeRev = findValue(stockMonthly, ['當月累計營收(百萬元)', '累計營收', '本年累計營業收入', '本年累計營收']);
-                    const previousCumulativeRev = findValue(stockMonthly, ['去年累計營收(百萬元)', '去年同期累計營收', '去年累計營收']);
+                // 1. 從季度報告 (t187ap05_L) 尋找並計算
+                if (stockReport) {
+                    // 當期累計營收 (使用客戶指定欄位名稱)
+                    const currentCumulativeRev = findValue(stockReport, ['累計營業收入-當月累計營收', '本期累計營業收入', '本年累計營業收入']);
+                    // 去年同期累計營收 (尋找對應的去年同期欄位名稱)
+                    const previousCumulativeRev = findValue(stockReport, ['累計營業收入-去年同期累計營收', '去年同期累計營業收入', '去年累計營業收入']);
 
                     if (currentCumulativeRev && previousCumulativeRev) {
-                        const current = parseFloat(currentCumulativeRev.replace(/,/g, ''));
-                        const previous = parseFloat(previousCumulativeRev.replace(/,/g, ''));
+                        const current = parseFloat(String(currentCumulativeRev).replace(/,/g, ''));
+                        const previous = parseFloat(String(previousCumulativeRev).replace(/,/g, ''));
                         
                         if (!isNaN(current) && !isNaN(previous) && previous !== 0) {
-                            cumulativeYoYValue = (((current - previous) / previous) * 100).toFixed(2);
-                            log(`*** 累計營收年增率：使用原始數據手動計算 (${current} vs ${previous}) = ${cumulativeYoYValue}%`);
+                            cumulativeGrowthValue = (((current - previous) / previous) * 100).toFixed(2);
+                            log(`*** 累計營收成長率：使用 t187ap05_L 數據手動計算 (${current} vs ${previous}) = ${cumulativeGrowthValue}%`);
                         }
                     }
                 }
                 
-                financialCache.revenueGrowth.year = cumulativeYoYValue || 'N/A'; 
-                // === 累計營收年增率 邏輯結束 ===
+                financialCache.revenueGrowth.year = cumulativeGrowthValue; 
+                // === 累計營收成長率 邏輯結束 ===
 
+                // 月營收的月增率和季增率 (仍保留在月營收欄位)
                 financialCache.revenueGrowth.month = findValue(stockMonthly, ['去年同月增減', '同月增減', '增減百分比']) || 'N/A';
                 financialCache.revenueGrowth.quarter = findValue(stockMonthly, ['上月比較增減']) || 'N/A';
                 
-                log(`TWSE 數據更新: EPS(年)=${financialCache.eps.year}, ROE(年)=${financialCache.roe.year}, 累計營收年增率=${financialCache.revenueGrowth.year}%`);
+                log(`TWSE 數據更新: EPS(年)=${financialCache.eps.year}, ROE(年)=${financialCache.roe.year}, 累計營收成長率=${financialCache.revenueGrowth.year}%`);
                 return { source: 'TWSE (Multi-period)', ...financialCache }; 
             } else {
                 log(`TWSE 代理成功但未找到 ${stockId} 資料`);
@@ -375,7 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (result && !result.error) {
                 financialCache.eps.year = result.defaultKeyStatistics?.trailingEps?.raw || 'N/A';
                 financialCache.roe.year = result.financialData?.returnOnEquity?.raw ? result.financialData.returnOnEquity.raw * 100 : 'N/A';
-                // 由於 Yahoo 的 revenueGrowth 常常是年報數據，我們仍保留 TWSE 累計營收年增率優先
+                
                 if (financialCache.revenueGrowth.year === 'N/A') {
                     financialCache.revenueGrowth.year = result.financialData?.revenueGrowth?.raw ? (result.financialData.revenueGrowth.raw * 100).toFixed(2) : 'N/A';
                 }
@@ -387,12 +378,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { return null; }
     }
 
-    // ================= 資料載入邏輯 =================
+    // ================= 資料載入邏輯 (不變) =================
 
     async function loadStockData() {
         let isLoaded = false;
 
-        // 1. 優先嘗試 FinMind
         if (TOKEN) {
             try {
                 const finInfo = await fetchFinmind('TaiwanStockInfo');
@@ -406,7 +396,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // 2. 備援：使用 TWSE
         if (!isLoaded) {
             log('FinMind 無資料或未設定，切換至 TWSE 證交所來源...');
             try {
@@ -415,7 +404,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     const twseData = await response.json();
                     stockData = twseData.map(item => {
                         let category = item['產業別'] || '其他';
-                        // 修正: 類股代碼轉文字
                         if (twseIndustryMap[category]) {
                             category = twseIndustryMap[category];
                         }
@@ -507,7 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // ================= UI 更新 =================
+    // ================= UI 更新與評分計算 (不變) =================
 
     function updateFinancialUI() {
         const getVal = (sel, key) => {
@@ -577,7 +565,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const epsInput = getNum('manualEps', 'eps', 'eps');
         const roeInput = getNum('manualRoe', 'roe', 'roe');
-        // 此處讀取累計營收年增率
         const revenueGrowthInput = getNum('manualRevenueGrowth', 'revenue', 'revenueGrowth');
         const profitMarginInput = getNum('manualProfitMargin', 'margin', 'profitMargin');
         
@@ -601,7 +588,6 @@ document.addEventListener('DOMContentLoaded', () => {
             else { basicScore -= 10; reasons.push(`ROE ${roeInput.toFixed(2)}% ≤ 0% (-10分)`); }
         } else { reasons.push('ROE 無數據 (0分)'); }
 
-        // 營收增長率的計算邏輯不變，但現在讀取的是「累計營收年增率」
         if (!isNaN(revenueGrowthInput)) {
             if (revenueGrowthInput >= 30) { basicScore += 30; reasons.push(`累計增率 ${revenueGrowthInput.toFixed(2)}% ≥ 30% (+30分)`); }
             else if (revenueGrowthInput >= 10) { basicScore += 20; reasons.push(`累計增率 ${revenueGrowthInput.toFixed(2)}% ≥ 10% (+20分)`); }
@@ -691,7 +677,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (finalEl) finalEl.innerHTML = `<h1 class="score-big ${color}">${final >= 0 ? '+' : ''}${final}%</h1>`;
     }
 
-    // ================= 主分析流程 =================
+    // ================= 主分析流程 (不變) =================
 
     document.getElementById('analyzeForm').onsubmit = async e => {
         e.preventDefault();
@@ -823,7 +809,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                         <td class="manual-input-cell"><input type="number" id="manualRoe" class="form-control manual-input" step="0.1"></td>
                                     </tr>
                                     <tr>
-                                        <td>累計營收年增率</td>
+                                        <td>累計營收成長率</td>
                                         <td><select class="form-select period-select" data-type="revenue"><option value="年(累計)" selected>年(累計)</option></select></td>
                                         <td class="fs-5" id="displayRevenue">N/A</td>
                                         <td class="manual-input-cell"><input type="number" id="manualRevenueGrowth" class="form-control manual-input" step="0.1"></td>
@@ -887,7 +873,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="basis-box">
                     <h5>📊 評分依據說明</h5>
                     <ul class="mb-0 small">
-                        <li><strong>基本面:</strong> 依據 EPS(>8/5/3), ROE(>15/10/5%), 累計營收年增率(>30/10%) 及 毛利率(>50/20%) 綜合給分。</li>
+                        <li><strong>基本面:</strong> 依據 EPS(>8/5/3), ROE(>15/10/5%), 累計營收成長率(>30/10%) 及 毛利率(>50/20%) 綜合給分。</li>
                         <li><strong>技術面:</strong> 計算所選期間內的漲跌幅。漲>30%滿分, 漲>15%高分, 跌<-10%扣分。</li>
                         <li><strong>市場面:</strong> 比較個股與加權指數(大盤)的同期表現。勝過大盤20%以上滿分。</li>
                         <li><strong>消息面:</strong> 分析近期新聞標題關鍵字 (如營收新高+1, 裁員-1) 計算情緒總分。</li>
