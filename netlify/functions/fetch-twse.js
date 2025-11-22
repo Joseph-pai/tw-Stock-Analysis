@@ -19,17 +19,16 @@ exports.handler = async (event, context) => {
             'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd', // 證券
             'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins' // 保險
         ],
-        // [年度/分析資料] 財務比率
+        // [年度/分析資料] 財務比率 & 經營績效 (解決 ROE/增率 N/A 關鍵)
         annual: [
-            'https://openapi.twse.com.tw/v1/opendata/t187ap17_L', // 營益分析
-            'https://openapi.twse.com.tw/v1/opendata/t187ap46_L'  // 經營績效
+            'https://openapi.twse.com.tw/v1/opendata/t187ap17_L', // 營益分析 (最常用)
+            'https://openapi.twse.com.tw/v1/opendata/t187ap46_L'  // 經營績效 (含 ROE)
         ],
         // [月營收資料]
         monthly: [
             'https://openapi.twse.com.tw/v1/opendata/t05st10_if'
         ],
-        // [股票清單] *** 新增此項作為 FinMind 的備援 ***
-        // 使用 T187AP03_L (財務報告) 來獲取股票代號、名稱與產業別
+        // [股票清單備援]
         stocks: [
             'https://openapi.twse.com.tw/v1/opendata/t187ap03_L'
         ]
@@ -42,7 +41,6 @@ exports.handler = async (event, context) => {
     }
 
     try {
-        // 平行抓取所有產業資料
         const requests = targetUrls.map(url => fetch(url).then(res => {
             if (!res.ok) return [];
             return res.json().catch(() => []);
