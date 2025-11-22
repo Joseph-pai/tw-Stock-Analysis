@@ -5,19 +5,23 @@ exports.handler = async (event, context) => {
     
     // 定義資料來源 URL
     const sources = {
-        // [季度資料] 綜合損益表 (含 EPS) + 累計營收成長率 (t187ap05_L)
+        // [股票清單資料] 用於取代 FinMind TaiwanStockInfo
+        stocks: [
+            'https://openapi.twse.com.tw/v1/opendata/t187ap03_L' // 上市公司基本資料
+        ],
+        // [季度資料] 綜合損益表 (含 EPS) + 累計營收 (t187ap05_L)
         quarterly: [
             'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci',  // 一般產業 (含 EPS)
             'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_fh',  // 金控業
             'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd',  // 證券期貨
             'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins', // 保險業
-            'https://openapi.twse.com.tw/v1/opendata/t187ap05_L'      // *** 新增：綜合損益表彙總表 (含累計營收) ***
+            'https://openapi.twse.com.tw/v1/opendata/t187ap05_L'      // *** 綜合損益表彙總表 (含累計營收) ***
         ],
         // [年度/分析資料] 營益分析彙總表 (含 毛利率)
         annual: [
             'https://openapi.twse.com.tw/v1/opendata/t187ap17_L'
         ],
-        // [月營收資料] *** 保留但不再用於累計營收計算 (使用 t187ap05_L 替代) ***
+        // [月營收資料] 仍保留以獲取月增/季增率
         monthly: [
             'https://openapi.twse.com.tw/v1/opendata/t05st10_if'
         ]
@@ -52,8 +56,6 @@ exports.handler = async (event, context) => {
         // 合併所有來源的數據
         const combinedData = allDataArrays.flat();
         
-        // 為了避免重複數據，可以使用 Map 根據 Code/公司代號去重 (可選，這裡簡化為直接合併)
-
         return {
             statusCode: 200,
             headers: { "Content-Type": "application/json" },
