@@ -20,12 +20,12 @@ exports.handler = async (event, context) => {
             'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd', // 證券
             'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins' // 保險
         ],
-        // [年度/分析資料] 財務比率
+        // [年度/分析資料] 財務比率分析 (ROE, 營收增率的主要來源)
         annual: [
-            'https://openapi.twse.com.tw/v1/opendata/t187ap17_L', // 營益分析
+            'https://openapi.twse.com.tw/v1/opendata/t187ap17_L', // 營益分析彙總 (最重要)
             'https://openapi.twse.com.tw/v1/opendata/t187ap46_L'  // 經營績效
         ],
-        // [月營收資料] 解決營收增率問題
+        // [月營收資料]
         monthly: [
             'https://openapi.twse.com.tw/v1/opendata/t05st10_if'
         ]
