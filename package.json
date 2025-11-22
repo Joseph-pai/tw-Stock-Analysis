@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "description": "Taiwan Stock Analyzer using Netlify Functions for data fetching.",
   "dependencies": {
-    "node-fetch": "^2.6.7"
+    "node-fetch": "^2.7.0"
   }
 }

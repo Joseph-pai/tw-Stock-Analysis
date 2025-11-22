@@ -1,18 +1,14 @@
 [build]
-  # 靜態檔案發布目錄
+  # 靜態檔案發布目錄，如果您的 index.html 就在根目錄，則設定為 "/"
   publish = "/"
   # Netlify Functions 的目錄
   functions = "netlify/functions"
 
-# 函數全域設定區塊
 [functions]
-  # 移除 top-level 的 timeout 設定，因為它必須位於子表格內
-
-# 函數預設設定子表格 (此為設定所有 Functions 的執行逾時時間)
-[functions."*"]
-  # 函數的執行時間限制 (單位為秒)。
-  # 設定為 20 秒，確保抓取外部 API 數據有足夠時間。
-  timeout = 20
+  # 僅保留 timeout 設定。
+  # Netlify 會自動使用最新的預設 Node.js runtime (目前為 nodejs20.x 或更高)，
+  # 避免語法錯誤。
+  timeout = 20 # 單位為秒 (Seconds)
   
 # 設定 /api/* 請求代理到我們的 Functions 裡
 [[redirects]]
