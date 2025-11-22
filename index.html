@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Optimized)</title>
+    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Precise Fix)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -29,6 +29,7 @@
         .period-select { width: 110px; font-size: 0.9rem; cursor: pointer; }
         .financial-period { background-color: rgba(255, 255, 255, 0.1); padding: 10px; border-radius: 5px; margin-bottom: 10px; }
         .basis-box { background: rgba(0,0,0,0.3); border-left: 4px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 4px; }
+        /* 面向欄位垂直置中 */
         td, th { vertical-align: middle; }
     </style>
 </head>
@@ -142,6 +143,17 @@ document.addEventListener('DOMContentLoaded', () => {
         profitMargin: { quarter: 'N/A', year: 'N/A' }
     };
 
+    // 產業代碼對照表 (解決 TWSE 返回數字代碼的問題)
+    const twseIndustryMap = {
+        "01": "水泥工業", "02": "食品工業", "03": "塑膠工業", "04": "紡織纖維", "05": "電機機械",
+        "06": "電器電纜", "07": "化學生技醫療", "08": "玻璃陶瓷", "09": "造紙工業", "10": "鋼鐵工業",
+        "11": "橡膠工業", "12": "汽車工業", "13": "電子工業", "14": "建材營造", "15": "航運業",
+        "16": "觀光事業", "17": "金融保險", "18": "貿易百貨", "19": "綜合", "20": "其他",
+        "21": "化學工業", "22": "生技醫療業", "23": "油電燃氣業", "24": "半導體業", "25": "電腦及週邊設備業",
+        "26": "光電業", "27": "通信網路業", "28": "電子零組件業", "29": "電子通路業", "30": "資訊服務業",
+        "31": "其他電子業"
+    };
+
     // UI 初始化
     document.getElementById('tokenInput').value = TOKEN;
     document.getElementById('tokenStatus').innerHTML = TOKEN ? '<span style="color:#28a745">Token 已載入（優先使用 FinMind）</span>' : '<span style="color:#ffc107">未設定 Token，將使用公開資料</span>';
@@ -161,7 +173,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let stockData = [];
     let industryCategories = new Set();
-    window.weights = { basic:29, technical:30, market:19, news:14, risk:8 };
+    // 修正：基礎權重 (基本:35, 技術:25, 市場:20, 消息:10, 風險:10)
+    window.weights = { basic:35, technical:25, market:20, news:10, risk:10 };
 
     window.log = function(msg) {
         const logEl = document.getElementById('logContent');
@@ -174,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ================= 資料載入 =================
 
-    // 修改：載入股票清單 (FinMind 失敗時自動切換 TWSE 備援)
+    // 修改：載入股票清單 (含備援與名稱映射)
     async function loadStockData() {
         let isLoaded = false;
 
@@ -199,14 +212,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 const response = await fetch('/.netlify/functions/fetch-twse?type=stocks');
                 if (response.ok) {
                     const twseData = await response.json();
-                    // 將 TWSE 格式轉換為程式內部格式
-                    stockData = twseData.map(item => ({
-                        stock_id: item.Code || item['公司代號'],
-                        stock_name: item.Name || item['公司簡稱'] || item['公司名稱'],
-                        industry_category: item['產業別'] || '其他'
-                    })).filter(s => s.stock_id && s.stock_name); // 過濾無效資料
+                    // 將 TWSE 格式轉換為程式內部格式，並使用映射表
+                    stockData = twseData.map(item => {
+                        let category = item['產業別'] || '其他';
+                        // 如果產業別是數字代碼，嘗試轉換
+                        if (/^\d+$/.test(category) && twseIndustryMap[category]) {
+                            category = twseIndustryMap[category];
+                        }
+                        return {
+                            stock_id: item.Code || item['公司代號'],
+                            stock_name: item.Name || item['公司簡稱'] || item['公司名稱'],
+                            industry_category: category
+                        };
+                    }).filter(s => s.stock_id && s.stock_name);
                     
-                    // 去除重複 (有些股票可能出現在不同表中)
+                    // 去除重複
                     const uniqueStocks = new Map();
                     stockData.forEach(s => uniqueStocks.set(s.stock_id, s));
                     stockData = Array.from(uniqueStocks.values());
@@ -320,11 +340,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { return null; }
     }
 
-    // 獲取證交所財報
+    // 獲取證交所財報 (修正：增強 ROE 與 營收增率 的抓取)
     async function fetchTWSEFinancials(stockId, period) {
         log(`證交所財報 請求中... (${stockId})`);
         
-        // 重置緩存
         financialCache = {
             eps: { quarter: 'N/A', year: 'N/A' },
             roe: { quarter: 'N/A', year: 'N/A' },
@@ -334,9 +353,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const [reportRes, ratioRes, monthlyRes] = await Promise.all([
-                fetch(`/.netlify/functions/fetch-twse?type=quarterly`),
-                fetch(`/.netlify/functions/fetch-twse?type=annual`),
-                fetch(`/.netlify/functions/fetch-twse?type=monthly`)
+                fetch(`/.netlify/functions/fetch-twse?type=quarterly`), 
+                fetch(`/.netlify/functions/fetch-twse?type=annual`),    
+                fetch(`/.netlify/functions/fetch-twse?type=monthly`)    
             ]);
 
             if (!reportRes.ok || !ratioRes.ok || !monthlyRes.ok) {
@@ -360,24 +379,30 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             const stockReport = findStock(reportData);
-            const stockRatio = findStock(ratioData); 
+            const stockRatio = findStock(ratioData); // 現在包含 T187AP17_L 和 T187AP46_L
             const stockMonthly = findStock(monthlyData);
 
             if (stockReport || stockRatio || stockMonthly) {
-                financialCache.eps.quarter = findValue(stockReport, ['基本每股盈餘', 'EPS', '每股盈餘', '歸屬於母公司']) || 'N/A';
-                financialCache.eps.year = financialCache.eps.quarter; 
+                // 1. EPS (年)
+                const fetchedEPS = findValue(stockReport, ['基本每股盈餘', 'EPS', '每股盈餘', '歸屬於母公司']);
+                financialCache.eps.year = fetchedEPS || 'N/A';
+                financialCache.eps.quarter = 'N/A'; 
 
-                financialCache.roe.quarter = findValue(stockRatio, ['權益報酬率', 'ROE', '股東權益報酬率']) || 'N/A';
-                financialCache.roe.year = financialCache.roe.quarter;
+                // 2. ROE (年) - 增加對應經營績效表的關鍵字
+                financialCache.roe.year = findValue(stockRatio, ['權益報酬率', 'ROE', '股東權益報酬率', '純益率']) || 'N/A';
+                financialCache.roe.quarter = 'N/A';
 
-                financialCache.profitMargin.quarter = findValue(stockRatio, ['毛利率', '營業毛利率']) || 'N/A';
-                financialCache.profitMargin.year = financialCache.profitMargin.quarter;
-
+                // 3. 毛利率
+                const fetchedMargin = findValue(stockRatio, ['毛利率', '營業毛利率']);
+                financialCache.profitMargin.quarter = fetchedMargin || 'N/A';
+                
+                // 4. 營收增率
                 financialCache.revenueGrowth.month = findValue(stockMonthly, ['去年同月增減', '同月增減', '增減百分比']) || 'N/A';
-                financialCache.revenueGrowth.quarter = findValue(stockMonthly, ['上月比較增減', '上月增減']) || 'N/A';
-                financialCache.revenueGrowth.year = findValue(stockMonthly, ['累計營業收入-去年同期增減', '累計增減', '累計增減百分比']) || 'N/A';
+                // 增加對應 T187AP46_L 的關鍵字 "營業收入變動率"
+                financialCache.revenueGrowth.year = findValue(stockRatio, ['營業收入成長率', '營收成長率', '營業收入變動率']) || findValue(stockMonthly, ['累計營業收入-去年同期增減']) || 'N/A';
+                financialCache.revenueGrowth.quarter = findValue(stockMonthly, ['上月比較增減']) || 'N/A';
 
-                log(`TWSE 代理成功: EPS=${financialCache.eps.quarter}, 月營收YoY=${financialCache.revenueGrowth.month}%`);
+                log(`TWSE 數據更新: EPS(年)=${financialCache.eps.year}, ROE(年)=${financialCache.roe.year}, 營收月增率=${financialCache.revenueGrowth.month}%`);
                 return { source: 'TWSE (Multi-period)', ...financialCache }; 
             } else {
                 log(`TWSE 代理成功但未找到 ${stockId} 資料`);
@@ -398,38 +423,14 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const result = await response.json(); 
             if (result && !result.error) {
-                financialCache.eps.quarter = result.defaultKeyStatistics?.trailingEps?.raw || 'N/A';
-                financialCache.roe.quarter = result.financialData?.returnOnEquity?.raw ? result.financialData.returnOnEquity.raw * 100 : 'N/A';
-                financialCache.revenueGrowth.month = result.financialData?.revenueGrowth?.raw ? result.financialData.revenueGrowth.raw * 100 : 'N/A';
+                financialCache.eps.year = result.defaultKeyStatistics?.trailingEps?.raw || 'N/A';
+                financialCache.roe.year = result.financialData?.returnOnEquity?.raw ? result.financialData.returnOnEquity.raw * 100 : 'N/A';
+                financialCache.revenueGrowth.year = result.financialData?.revenueGrowth?.raw ? result.financialData.revenueGrowth.raw * 100 : 'N/A';
                 financialCache.profitMargin.quarter = result.financialData?.grossMargins?.raw ? result.financialData.grossMargins.raw * 100 : 'N/A';
                 return { source: 'Yahoo Finance' };
             }
             return null;
         } catch (err) { return null; }
-    }
-
-    async function fetchFinmind(dataset, dataId = '', startDate = '', retries = 3) {
-        if (!TOKEN && dataset !== 'TaiwanStockInfo') return null;
-        let url = `/.netlify/functions/fetch-finmind?dataset=${dataset}`;
-        if (dataId) url += `&data_id=${dataId}`;
-        if (startDate) url += `&start_date=${startDate}`;
-        if (TOKEN) url += `&token=${TOKEN}`;
-        
-        for (let attempt = 1; attempt <= retries; attempt++) {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000);
-                const response = await fetch(url, { signal: controller.signal });
-                clearTimeout(timeoutId);
-                if (!response.ok) {
-                    if (attempt < retries) { await new Promise(r => setTimeout(r, 1000 * attempt)); continue; }
-                    return null;
-                }
-                const data = await response.json();
-                if (data.status === 200 && data.data) return data;
-            } catch (err) { if (attempt < retries) await new Promise(r => setTimeout(r, 1000 * attempt)); }
-        }
-        return null;
     }
 
     // ================= UI 更新 =================
@@ -538,7 +539,7 @@ document.addEventListener('DOMContentLoaded', () => {
             else { reasons.push(`毛利 ${profitMarginInput.toFixed(2)}% < 20% (0分)`); }
         } else { reasons.push('毛利 無數據 (0分)'); }
         
-        const weight = weights.basic || 29;
+        const weight = weights.basic || 35;
         const finalBasicScore = Math.max(-weight, Math.min(weight, Math.round(basicScore / 100 * weight)));
         
         const basicScoreEl = document.getElementById('score_basic');
@@ -553,17 +554,35 @@ document.addEventListener('DOMContentLoaded', () => {
         updateTotalScore();
     };
 
+    // 修正：確保調整權重後會即時重新計算總得分
     window.adjustWeights = function(changedField, newValue) {
         const oldValue = weights[changedField];
         const diff = newValue - oldValue;
         if (diff === 0) return;
         weights[changedField] = newValue;
         const otherFields = Object.keys(weights).filter(key => key !== changedField);
-        const avgChange = diff / otherFields.length;
-        otherFields.forEach(key => {
-            weights[key] = Math.max(0, weights[key] - avgChange);
-        });
+        const otherTotal = otherFields.reduce((sum, key) => sum + weights[key], 0);
+        
+        // 按比例重新分配剩餘權重，確保總和 100
+        if (otherTotal === 0) {
+            const avg = (100 - newValue) / otherFields.length;
+            otherFields.forEach(key => weights[key] = avg);
+        } else {
+            const scale = (100 - newValue) / otherTotal;
+            otherFields.forEach(key => weights[key] = Math.max(0, Math.round(weights[key] * scale * 10) / 10));
+        }
+        
+        // 微調誤差
+        const total = Object.values(weights).reduce((sum, val) => sum + val, 0);
+        if (total !== 100) {
+            const diff = 100 - total;
+            const maxField = Object.keys(weights).reduce((a, b) => weights[a] > weights[b] ? a : b);
+            weights[maxField] += diff;
+        }
+        
         updateWeightInputs();
+        // *** 關鍵：重新計算基本面分數 (因為它依賴權重) 和總分 ***
+        calculateBasicScoreFromManualInput(); 
         updateTotalScore();
     };
 
@@ -592,8 +611,10 @@ document.addEventListener('DOMContentLoaded', () => {
             risk: getScore('score_risk')
         };
 
-        const total = Math.round(s.basic + s.technical + s.market + s.news + s.risk);
+        const total = s.basic + s.technical + s.market + s.news + s.risk;
+        // 修正：總分計算範圍調整為 -30 ~ +30
         const final = Math.max(-30, Math.min(30, Math.round(total * 0.3))); 
+        
         const color = final >= 0 ? 'text-success' : 'text-danger';
         const finalEl = document.getElementById('finalScore');
         if (finalEl) finalEl.innerHTML = `<h1 class="score-big ${color}">${final >= 0 ? '+' : ''}${final}%</h1>`;
@@ -615,7 +636,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('logContent').textContent = '';
 
         try {
-            // 1. 股票資訊
             let name = symbol;
             let industry = '未知';
             if (stockData.length > 0) {
@@ -623,7 +643,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (stock) { name = stock.stock_name; industry = stock.industry_category; }
             }
 
-            // 2. 股價資料
             let priceDataFinal = await fetchYahooWithProxy(`${symbol}.TW`, '股價');
             if (!priceDataFinal && !TOKEN) { 
                 const twsePrice = await fetchTWSEPrice(symbol);
@@ -633,18 +652,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (!priceDataFinal) throw new Error('無法取得股價資料，請稍後再試');
 
-            // 3. 財報資料
             let financialData = await fetchTWSEFinancials(symbol, '季');
             if (!financialData) financialData = await fetchYahooFinanceFinancials(symbol);
             
-            // 4. 新聞
             let newsRaw = null;
             if (TOKEN) newsRaw = await fetchFinmind('TaiwanStockNews', symbol, startDate);
 
-            // 5. 大盤
             let marketData = await fetchYahooWithProxy('%5ETWII', '大盤');
 
-            // === 計算 ===
             const allTimestamps = priceDataFinal.chart.result[0].timestamp;
             const allCloses = priceDataFinal.chart.result[0].indicators.quote[0].close;
             const startTs = new Date(startDate).getTime() / 1000;
@@ -659,8 +674,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const price = closes.at(-1).toFixed(2);
             const risePercent = closes.length >= 2 ? ((closes.at(-1) - closes[0]) / closes[0] * 100).toFixed(2) : 0;
             
-            // 技術面
-            const techW = weights.technical || 30;
+            // 技術面 (修正預設權重 25 -> 25)
+            const techW = weights.technical || 25;
             let techScore = 0;
             let techReason = '區間震盪 (0分)';
             if (risePercent >= 30) { techScore = techW; techReason = `暴漲 ${risePercent}% (滿分)`; }
@@ -668,8 +683,8 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (risePercent >= 5) { techScore = Math.round(techW * 0.4); techReason = `上漲 ${risePercent}%`; }
             else if (risePercent < -10) { techScore = -Math.round(techW * 0.8); techReason = `重挫 ${risePercent}%`; }
 
-            // 大盤比較
-            const marketW = weights.market || 19;
+            // 大盤比較 (20)
+            const marketW = weights.market || 20;
             let marketScore = 0; 
             let marketReason = '無資料';
             if (marketData) {
@@ -684,8 +699,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 else { marketScore = -Math.round(marketW * 0.6); marketReason = `落後 ${beat}%`; }
             }
 
-            // 新聞
-            const newsW = weights.news || 14;
+            // 新聞 (10)
+            const newsW = weights.news || 10;
             let newsScore = 0;
             let newsReason = '無新聞 (0分)';
             if (newsRaw?.data?.length > 0) {
@@ -699,8 +714,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 else { newsScore = -Math.round(newsW * 0.5); newsReason = `情緒偏空 (${sentiment})`; }
             }
             
-            // 風險面
-            const riskW = weights.risk || 8;
+            // 風險面 (10)
+            const riskW = weights.risk || 10;
             let riskScore = 0;
             let riskReason = '無重大風險 (0分)'; 
 
