@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v13 - ROE Fix)</title>
+    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v14)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -36,7 +36,7 @@
 <div class="container py-5">
 
     <h1 class="text-center mb-2">台灣股市終極專業分析器</h1>
-    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/22 累計營收 V12 + ROE修復 • Netlify Functions</p>
+    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/22 動態維度數據版 • Netlify Functions</p>
 
     <div class="row justify-content-center mb-4">
         <div class="col-md-8">
@@ -134,7 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let TOKEN = '';
     try { TOKEN = localStorage.getItem('joseph_pai_token_2025') || ''; } catch(e) {}
 
-    // 財務數據緩存
+    // 財務數據緩存 (矩陣)
     let financialCache = {
         eps: { quarter: 'N/A', year: 'N/A' },
         roe: { quarter: 'N/A', year: 'N/A' },
@@ -241,6 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchTWSEFinancials(stockId, period) {
         log(`證交所財報 請求中... (${stockId})`);
         
+        // 重置財報快取
         financialCache = {
             eps: { quarter: 'N/A', year: 'N/A' },
             roe: { quarter: 'N/A', year: 'N/A' },
@@ -264,7 +265,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const ratioData = await ratioRes.json(); 
             const monthlyData = await monthlyRes.json(); 
 
-            // 輔助: 在陣列中尋找股票
             const findStocks = (data) => data ? data.filter(item => (String(item.Code) === stockId || String(item.公司代號) === stockId)) : [];
             
             const findValue = (obj, keywords) => {
@@ -282,13 +282,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 return null;
             };
 
-            // 獲取該股票所有的季度/年度報告記錄
             const stockReportList = findStocks(reportData);
-            // 修正：獲取所有的比率資料列表，確保 ROE 不會因為在第二個表而漏掉
             const stockRatioList = findStocks(ratioData); 
             const stockMonthly = findStocks(monthlyData)[0]; 
 
-            // Helper: 在多個物件中搜尋
             const findValueInList = (list, keywords) => {
                 for (const item of list) {
                     const val = findValue(item, keywords);
@@ -298,16 +295,19 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             if (stockReportList.length > 0 || stockRatioList.length > 0 || stockMonthly) {
-                // EPS (從列表搜尋)
+                // EPS
                 financialCache.eps.year = findValueInList(stockReportList, ['基本每股盈餘', 'EPS', '每股盈餘']) || 'N/A';
-                
-                // ROE (修正：從比率列表搜尋所有可能的來源)
+                financialCache.eps.quarter = financialCache.eps.year; // 暫無單季數據，映射相同
+
+                // ROE
                 financialCache.roe.year = findValueInList(stockRatioList, ['權益報酬率', 'ROE', '股東權益報酬率', '純益率']) || 'N/A';
-                
+                financialCache.roe.quarter = financialCache.roe.year;
+
                 // 毛利率
                 financialCache.profitMargin.quarter = findValueInList(stockRatioList, ['毛利率', '營業毛利率']) || 'N/A';
+                financialCache.profitMargin.year = financialCache.profitMargin.quarter;
                 
-                // === 累計營收成長率 自動計算 V12 (強制使用 t187ap05_L 原始數據) ===
+                // === 累計營收成長率 (手動計算 - 優先使用 t187ap05_L 季度報告) ===
                 let calculatedGrowth = 'N/A';
                 
                 const currentCumRaw = findValueInList(stockReportList, ['累計營業收入-當月累計營收', '本期累計營業收入']);
@@ -319,27 +319,31 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     if (!isNaN(current) && !isNaN(previous) && previous !== 0) {
                         calculatedGrowth = (((current - previous) / previous) * 100).toFixed(2);
-                        log(`*** 累計營收成長率計算 (t187ap05_L) ***`);
-                        log(`當月累計: ${current}, 去年累計: ${previous}`);
-                        log(`結果: ${calculatedGrowth}%`);
-                    } else {
-                         log(`無法計算: 數值無效 (${current}, ${previous})`);
+                        log(`*** 累計營收(年)：使用 t187ap05_L 手動計算: ${calculatedGrowth}%`);
                     }
-                } else {
-                     log(`無法計算: 在 t187ap05_L 中未找到累計營收欄位`);
+                } else if (stockMonthly) {
+                    // 備援：如果季度報告沒抓到，嘗試從月營收數據手動計算
+                    const mCurr = findValue(stockMonthly, ['累計營業收入-當月累計營收', '當月累計營收']);
+                    const mPrev = findValue(stockMonthly, ['累計營業收入-去年累計營收', '去年累計營收']);
+                    if (mCurr && mPrev) {
+                        const current = parseFloat(String(mCurr).replace(/,/g, ''));
+                        const previous = parseFloat(String(mPrev).replace(/,/g, ''));
+                        if (!isNaN(current) && !isNaN(previous) && previous !== 0) {
+                            calculatedGrowth = (((current - previous) / previous) * 100).toFixed(2);
+                            log(`*** 累計營收(年)：使用月營收手動計算: ${calculatedGrowth}%`);
+                        }
+                    }
                 }
                 
                 financialCache.revenueGrowth.year = calculatedGrowth;
-                financialCache.revenueGrowth.month = calculatedGrowth; 
-                financialCache.revenueGrowth.quarter = calculatedGrowth;
-                // === 計算結束 ===
 
+                // 月營收與季營收 (短期數據)
                 if (stockMonthly) {
-                     const monGrowth = findValue(stockMonthly, ['增減百分比', '同月增減']);
-                     if (financialCache.revenueGrowth.year === 'N/A' && monGrowth) {
-                         financialCache.revenueGrowth.year = monGrowth;
-                         financialCache.revenueGrowth.month = monGrowth;
-                     }
+                     financialCache.revenueGrowth.month = findValue(stockMonthly, ['營業收入-去年同月增減(%)', '去年同月增減', '增減百分比']) || 'N/A';
+                     financialCache.revenueGrowth.quarter = findValue(stockMonthly, ['營業收入-上月比較增減(%)', '上月比較增減']) || 'N/A';
+                } else {
+                     financialCache.revenueGrowth.month = 'N/A';
+                     financialCache.revenueGrowth.quarter = 'N/A';
                 }
 
                 log(`TWSE 數據更新: EPS=${financialCache.eps.year}, ROE=${financialCache.roe.year}, 累計營收成長=${financialCache.revenueGrowth.year}%`);
@@ -482,25 +486,39 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // ================= UI 更新 =================
+    // ================= UI 更新與選擇邏輯 (修正：確保數值自動更新) =================
 
     function updateFinancialUI() {
         const getVal = (sel, key) => {
             const el = document.querySelector(`.period-select[data-type="${sel}"]`);
             if (!el) return 0;
             const period = el.value;
-            let dataKey = 'quarter';
-            if (period === '年' || period === '年(累計)') dataKey = 'year';
-            if (sel === 'revenue') {
-                dataKey = 'year'; // 強制使用計算後的 year 值
+            
+            // 預設對應
+            let dataKey = 'year'; // 預設取年數據 (因為大部分數據如EPS/ROE/累計營收 都是年的)
+            
+            // 特殊對應邏輯
+            if (period === '季') dataKey = 'quarter';
+            if (period === '月') dataKey = 'month';
+            
+            // 營收成長率特殊處理: '年' 選項對應到累計營收成長率
+            if (sel === 'revenue' && (period === '年' || period === '年(累計)')) {
+                dataKey = 'year';
             }
-            return parseFloat(financialCache[key][dataKey]);
+
+            const val = financialCache[key][dataKey];
+            return (val === 'N/A' || val === undefined) ? 'N/A' : parseFloat(val);
         };
 
         const setUI = (id, val, suffix) => {
             const displayEl = document.getElementById(id);
             const inputEl = document.getElementById(id.replace('display', 'manual'));
-            if (displayEl) displayEl.textContent = isNaN(val) ? 'N/A' : `${val.toFixed(2)}${suffix}`;
+            
+            // 顯示邏輯
+            const displayVal = (val === 'N/A') ? 'N/A' : `${val.toFixed(2)}${suffix}`;
+            if (displayEl) displayEl.textContent = displayVal;
+            
+            // 手動輸入框邏輯
             if (inputEl && inputEl.value === '') {
                 inputEl.value = ''; 
                 inputEl.placeholder = ''; 
@@ -535,36 +553,66 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.calculateBasicScoreFromManualInput = function() {
-        const getNum = (id) => parseFloat(document.getElementById(id)?.value) || 0;
-        const epsInput = getNum('manualEps');
-        const roeInput = getNum('manualRoe');
-        const revenueGrowthInput = getNum('manualRevenueGrowth');
-        const profitMarginInput = getNum('manualProfitMargin');
+        // 取得目前顯示的值 (支援手動輸入覆蓋)
+        const getNum = (id, sel, key) => {
+            const manualVal = parseFloat(document.getElementById(id)?.value);
+            if (!isNaN(manualVal)) return manualVal; // 如果手動輸入有值，優先使用
+
+            // 否則使用 financialCache 中的值 (透過 updateFinancialUI 的 getVal 邏輯)
+            const el = document.querySelector(`.period-select[data-type="${sel}"]`);
+            const period = el ? el.value : '年';
+            let dataKey = 'year';
+            if (period === '季') dataKey = 'quarter';
+            if (period === '月') dataKey = 'month';
+            
+            const cacheVal = financialCache[key][dataKey];
+            return (cacheVal === 'N/A' || cacheVal === undefined) ? NaN : parseFloat(cacheVal);
+        };
+
+        const epsInput = getNum('manualEps', 'eps', 'eps');
+        const roeInput = getNum('manualRoe', 'roe', 'roe');
+        const revenueGrowthInput = getNum('manualRevenueGrowth', 'revenue', 'revenueGrowth');
+        const profitMarginInput = getNum('manualProfitMargin', 'margin', 'profitMargin');
         
         let basicScore = 0;
         
-        if (epsInput >= 8) basicScore += 30;
-        else if (epsInput >= 3) basicScore += 18;
-        else if (epsInput >= 0) basicScore += 5;
-        else basicScore -= 15;
+        // 評分邏輯
+        if (!isNaN(epsInput)) {
+            if (epsInput >= 8) basicScore += 30;
+            else if (epsInput >= 5) basicScore += 25;
+            else if (epsInput >= 3) basicScore += 18;
+            else if (epsInput >= 0) basicScore += 5;
+            else basicScore -= 15;
+        }
 
-        if (roeInput >= 15) basicScore += 30;
-        else if (roeInput >= 10) basicScore += 15;
-        else if (roeInput < 0) basicScore -= 10;
+        if (!isNaN(roeInput)) {
+            if (roeInput >= 15) basicScore += 30;
+            else if (roeInput >= 10) basicScore += 20;
+            else if (roeInput >= 5) basicScore += 10;
+            else if (roeInput > 0) basicScore += 5;
+            else basicScore -= 10;
+        }
 
-        if (revenueGrowthInput >= 30) basicScore += 30;
-        else if (revenueGrowthInput >= 10) basicScore += 15;
-        else if (revenueGrowthInput < 0) basicScore -= 10;
+        if (!isNaN(revenueGrowthInput)) {
+            if (revenueGrowthInput >= 30) basicScore += 30;
+            else if (revenueGrowthInput >= 10) basicScore += 20;
+            else if (revenueGrowthInput > 0) basicScore += 10;
+            else basicScore -= 10;
+        }
 
-        if (profitMarginInput >= 30) basicScore += 10;
-        else if (profitMarginInput >= 10) basicScore += 4;
+        if (!isNaN(profitMarginInput) && profitMarginInput > 0) {
+            if (profitMarginInput >= 50) basicScore += 10;
+            else if (profitMarginInput >= 20) basicScore += 5;
+        }
         
-        basicScore = Math.max(-30, Math.min(30, Math.round(basicScore / 100 * 30))); 
+        const weight = weights.basic || 35;
+        // 計算加權分數 (最高 100 分 -> 映射到權重)
+        const finalBasicScore = Math.max(-weight, Math.min(weight, Math.round(basicScore / 100 * weight)));
         
         const basicScoreEl = document.getElementById('score_basic');
         if (basicScoreEl) {
-            basicScoreEl.textContent = `${basicScore >= 0 ? '+' : ''}${basicScore}`;
-            basicScoreEl.className = `badge ${basicScore>=0?'badge-pos':'badge-neg'} fs-5`;
+            basicScoreEl.textContent = `${finalBasicScore >= 0 ? '+' : ''}${finalBasicScore}`;
+            basicScoreEl.className = `badge ${finalBasicScore>=0?'badge-pos':'badge-neg'} fs-5`;
         }
         
         updateTotalScore();
@@ -660,7 +708,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!priceDataFinal && !TOKEN) { 
                 const twsePrice = await fetchTWSEPrice(symbol);
                 if (twsePrice) {
-                     priceDataFinal = { chart: { result: [{ timestamp: twsePrice.map(d => { const p=d.Date.split('/'); return new Date(`${+p[0]+1911}-${p[1]}-${p[2]}`).getTime()/1000; }), indicators: { quote: [{ close: twsePrice.map(d => parseFloat(d.Close.replace(/,/g,''))) }] } }] } };
+                     priceDataFinal = { chart: { result: [{ timestamp: twsePrice.map(d => { const p=d.Date.split('/'); return new Date(`${+p[0]+1911}-${p[1]}-${p[2]}`).getTime()/1000; }), indicators: { quote: [{ close: twsePrice.map(d => parseFloat(d.Close.replace(/,/g, ''))) }] } }] } };
                 }
             }
             if (!priceDataFinal) throw new Error('無法取得股價資料，請稍後再試');
