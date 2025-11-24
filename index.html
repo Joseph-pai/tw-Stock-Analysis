@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v17)</title>
+    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Layout Fix)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -21,14 +21,13 @@
         .data-source { font-size: 0.8rem; color: #ffc107; margin-top: 10px; }
         .date-range-input { width: 120px; }
         .manual-input { width: 100%; text-align: center; font-size: 1rem; }
-        .explanation { background: white; color: black; padding: 15px; border-radius: 8px; margin-top: 10px; font-size: 0.9rem; }
-        .explanation h6 { color: #8B0000; margin-bottom: 5px; font-weight: bold; }
+        .explanation { background: white; color: black; padding: 20px; border-radius: 12px; margin-top: 30px; font-size: 0.95rem; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .explanation h6 { color: #8B0000; margin-bottom: 10px; font-weight: bold; font-size: 1.1rem; }
         .manual-input-cell { padding: 5px !important; width: 100px; }
         .manual-label { font-size: 1rem; color: #ffc107; font-weight: bold; }
         .table-header-red { background-color: #8B0000; color: white; }
         .period-select { width: 110px; font-size: 0.9rem; cursor: pointer; }
         .financial-period { background-color: rgba(255, 255, 255, 0.1); padding: 10px; border-radius: 5px; margin-bottom: 10px; }
-        .basis-box { background: rgba(0,0,0,0.3); border-left: 4px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 4px; }
         td, th { vertical-align: middle; }
     </style>
 </head>
@@ -36,7 +35,7 @@
 <div class="container py-5">
 
     <h1 class="text-center mb-2">台灣股市終極專業分析器</h1>
-    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/22 維度切換修復版 • Netlify Functions</p>
+    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/22 最終優化版 • Netlify Functions 全代理架構</p>
 
     <div class="row justify-content-center mb-4">
         <div class="col-md-8">
@@ -153,9 +152,9 @@ document.addEventListener('DOMContentLoaded', () => {
         "35": "綠能環保", "36": "數位雲端", "37": "運動休閒", "38": "居家生活", "91": "存託憑證"
     };
 
-    // UI 初始化 (Token 自動載入)
+    // UI 初始化
     document.getElementById('tokenInput').value = TOKEN;
-    document.getElementById('tokenStatus').innerHTML = TOKEN ? '<span style="color:#28a745">Token 已從記錄中載入 (下次免輸入)</span>' : '<span style="color:#ffc107">未設定 Token，將使用公開資料</span>';
+    document.getElementById('tokenStatus').innerHTML = TOKEN ? '<span style="color:#28a745">Token 已從記錄中載入</span>' : '<span style="color:#ffc107">未設定 Token，將使用公開資料</span>';
     
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('endDate').value = today;
@@ -297,7 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (stockReportList.length > 0 || stockRatioList.length > 0 || stockMonthly) {
                 // EPS
-                financialCache.eps.year = findValueInList(stockReportList, ['基本每股盈餘', 'EPS', '每股盈餘']) || 'N/A';
+                financialCache.eps.year = findValueInList(stockReportList, ['基本每股盈餘', 'EPS', '每股盈餘', '歸屬於母公司']) || 'N/A';
                 financialCache.eps.quarter = financialCache.eps.year;
 
                 // ROE
@@ -488,7 +487,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // ================= UI 更新與評分計算 (修正) =================
+    // ================= UI 更新與評分計算 (修正：維度切換邏輯) =================
 
     function updateFinancialUI() {
         const getVal = (sel, key) => {
@@ -496,10 +495,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!el) return 0;
             const period = el.value;
             
-            // 預設取年數據
+            // 根據選擇的維度，決定讀取緩存中的哪個屬性
             let dataKey = 'year'; 
-            
-            // 修正：依照使用者選擇的維度取值
             if (period === '季') dataKey = 'quarter';
             if (period === '月') dataKey = 'month';
             if (period === '年' || period === '年(累計)') dataKey = 'year';
@@ -511,8 +508,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const setUI = (id, val, suffix) => {
             const displayEl = document.getElementById(id);
             const inputEl = document.getElementById(id.replace('display', 'manual'));
+            
+            // 顯示邏輯
             const displayVal = (val === 'N/A') ? 'N/A' : `${val.toFixed(2)}${suffix}`;
             if (displayEl) displayEl.textContent = displayVal;
+            
+            // 手動輸入框邏輯 (僅預設為空)
             if (inputEl && inputEl.value === '') {
                 inputEl.value = ''; 
                 inputEl.placeholder = ''; 
@@ -536,26 +537,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setupPeriodChangeListeners() {
         document.querySelectorAll('.period-select').forEach(select => {
-            select.onchange = updateFinancialUI;
+            select.addEventListener('change', updateFinancialUI);
         });
     }
     
     function setupManualInputListeners() {
         document.querySelectorAll('.manual-input').forEach(input => {
-            input.onchange = calculateBasicScoreFromManualInput;
+            input.addEventListener('change', calculateBasicScoreFromManualInput);
         });
     }
 
     window.calculateBasicScoreFromManualInput = function() {
         const getNum = (id, sel, key) => {
+            // 優先使用手動輸入
             const manualVal = parseFloat(document.getElementById(id)?.value);
             if (!isNaN(manualVal)) return manualVal;
 
+            // 否則使用當前維度的緩存值
             const el = document.querySelector(`.period-select[data-type="${sel}"]`);
-            const period = el ? el.value : '年';
+            if (!el) return NaN;
+            const period = el.value;
             let dataKey = 'year';
             if (period === '季') dataKey = 'quarter';
             if (period === '月') dataKey = 'month';
+            if (period === '年(累計)') dataKey = 'year';
             
             const cacheVal = financialCache[key][dataKey];
             return (cacheVal === 'N/A' || cacheVal === undefined) ? NaN : parseFloat(cacheVal);
@@ -586,11 +591,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } else { reasons.push('ROE 無數據'); }
 
         if (!isNaN(revenueGrowthInput)) {
-            if (revenueGrowthInput >= 30) { basicScore += 30; reasons.push(`增率 ${revenueGrowthInput.toFixed(2)}% ≥ 30% (+30)`); }
-            else if (revenueGrowthInput >= 10) { basicScore += 20; reasons.push(`增率 ${revenueGrowthInput.toFixed(2)}% ≥ 10% (+20)`); }
-            else if (revenueGrowthInput > 0) { basicScore += 10; reasons.push(`增率 ${revenueGrowthInput.toFixed(2)}% > 0% (+10)`); }
-            else { basicScore -= 10; reasons.push(`增率 ${revenueGrowthInput.toFixed(2)}% ≤ 0% (-10)`); }
-        } else { reasons.push('增率 無數據'); }
+            if (revenueGrowthInput >= 30) { basicScore += 30; reasons.push(`營收增率 ${revenueGrowthInput.toFixed(2)}% ≥ 30% (+30)`); }
+            else if (revenueGrowthInput >= 10) { basicScore += 20; reasons.push(`營收增率 ${revenueGrowthInput.toFixed(2)}% ≥ 10% (+20)`); }
+            else if (revenueGrowthInput > 0) { basicScore += 10; reasons.push(`營收增率 ${revenueGrowthInput.toFixed(2)}% > 0% (+10)`); }
+            else { basicScore -= 10; reasons.push(`營收增率 ${revenueGrowthInput.toFixed(2)}% ≤ 0% (-10)`); }
+        } else { reasons.push('營收增率 無數據'); }
 
         if (!isNaN(profitMarginInput)) {
             if (profitMarginInput >= 50) { basicScore += 10; reasons.push(`毛利 ${profitMarginInput.toFixed(2)}% ≥ 50% (+10)`); }
@@ -674,6 +679,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (finalEl) finalEl.innerHTML = `<h1 class="score-big ${color}">${final >= 0 ? '+' : ''}${final}%</h1>`;
     }
 
+    // ================= 主分析流程 =================
+
     document.getElementById('analyzeForm').onsubmit = async e => {
         e.preventDefault();
         const symbol = document.getElementById('stockSelect').value.trim();
@@ -728,15 +735,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const price = closes.at(-1).toFixed(2);
             const risePercent = closes.length >= 2 ? ((closes.at(-1) - closes[0]) / closes[0] * 100).toFixed(2) : 0;
             
-            // 技術面
-            let techScore = 0, techReason = '區間震盪';
-            if (risePercent >= 30) { techScore = 28; techReason = `暴漲 ${risePercent}%`; }
-            else if (risePercent >= 15) { techScore = 20; techReason = `大漲 ${risePercent}%`; }
-            else if (risePercent >= 5) { techScore = 10; techReason = `上漲 ${risePercent}%`; }
-            else if (risePercent < -10) { techScore = -22; techReason = `重挫 ${risePercent}%`; }
+            const techW = weights.technical || 25;
+            let techScore = 0;
+            let techReason = '區間震盪';
+            if (risePercent >= 30) { techScore = techW; techReason = `暴漲 ${risePercent}% (滿分)`; }
+            else if (risePercent >= 15) { techScore = Math.round(techW * 0.8); techReason = `大漲 ${risePercent}%`; }
+            else if (risePercent >= 5) { techScore = Math.round(techW * 0.4); techReason = `上漲 ${risePercent}%`; }
+            else if (risePercent < -10) { techScore = -Math.round(techW * 0.8); techReason = `重挫 ${risePercent}%`; }
 
-            // 大盤比較
-            let marketScore = 0, marketReason = '無資料';
+            const marketW = weights.market || 20;
+            let marketScore = 0; 
+            let marketReason = '無資料';
             if (marketData) {
                 const mCloses = marketData.chart.result[0].indicators.quote[0].close.filter(Boolean);
                 const mStart = mCloses[mCloses.length - closes.length] || mCloses[0];
@@ -744,32 +753,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 const mRise = ((mEnd - mStart) / mStart * 100).toFixed(2);
                 const beat = (parseFloat(risePercent) - parseFloat(mRise)).toFixed(1);
                 
-                if (beat >= 20) { marketScore = 25; marketReason = `完勝 +${beat}%`; }
-                else if (beat >= 0) { marketScore = 8; marketReason = `小勝 +${beat}%`; }
-                else { marketScore = -15; marketReason = `落後 ${beat}%`; }
+                if (beat >= 20) { marketScore = marketW; marketReason = `完勝 +${beat}% (滿分)`; }
+                else if (beat >= 0) { marketScore = Math.round(marketW * 0.4); marketReason = `小勝 +${beat}%`; }
+                else { marketScore = -Math.round(marketW * 0.6); marketReason = `落後 ${beat}%`; }
             }
 
-            // 新聞
-            let newsScore = 0, newsReason = '無新聞';
+            const newsW = weights.news || 10;
+            let newsScore = 0;
+            let newsReason = '無新聞';
             if (newsRaw?.data?.length > 0) {
                 let sentiment = 0;
                 newsRaw.data.slice(0,30).forEach(n => {
-                    if (n.title.match(/獲利|成長|新高|訂單/)) sentiment++;
-                    if (n.title.match(/虧損|衰退|裁員/)) sentiment--;
+                    if (n.title.match(/獲利|成長|新高|訂單|大漲/)) sentiment++;
+                    if (n.title.match(/虧損|衰退|裁員|利空|大跌/)) sentiment--;
                 });
-                newsScore = sentiment >= 5 ? 15 : sentiment >= 0 ? 5 : -20;
-                newsReason = `情緒分: ${sentiment}`;
+                if (sentiment >= 5) { newsScore = newsW; newsReason = `情緒極佳 (${sentiment}) (滿分)`; }
+                else if (sentiment > 0) { newsScore = Math.round(newsW * 0.5); newsReason = `情緒正向 (${sentiment})`; }
+                else { newsScore = -Math.round(newsW * 0.5); newsReason = `情緒偏空 (${sentiment})`; }
             }
+            
+            const riskW = weights.risk || 10;
+            let riskScore = 0;
+            let riskReason = '無重大風險'; 
 
-            // === 渲染 HTML ===
             const finSource = financialData?.source || '無';
             
             document.getElementById('result').innerHTML = `
                 <div class="text-center mb-5">
                     <h2>${symbol} ${name} <small class="text-info">(${industry})</small></h2>
-                    <div id="finalScore"><h1 class="score-big">--</h1></div>
+                    <div id="finalScore"><h1 class="score-big text-warning">0%</h1></div>
                     <p class="lead">整體市場趨勢評分 <span id="weightHint" style="color:yellow"></span></p>
-                    <p class="fs-5">現價 ${price} ｜ 區間漲跌 ${risePercent}%</p>
+                    <p class="fs-5">現價 ${price} ｜ 期間漲跌 ${risePercent}%</p>
                     <p class="data-source">資料來源: 股價(Yahoo) 財報(${finSource})</p>
                 </div>
 
@@ -779,7 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="card-header bg-primary text-white"><strong>最新財報數據</strong></div>
                             <div class="financial-period"><small class="text-muted">請使用下方選單切換分析維度</small></div>
                             <table class="table table-striped mb-0">
-                                <thead><tr><th>項目</th><th>維度</th><th>數值</th><th class="manual-label">輸入</th></tr></thead>
+                                <thead><tr><th>項目</th><th>期間</th><th>數值</th><th class="manual-label">手動輸入</th></tr></thead>
                                 <tbody>
                                     <tr>
                                         <td>EPS</td>
@@ -794,69 +808,87 @@ document.addEventListener('DOMContentLoaded', () => {
                                         <td class="manual-input-cell"><input type="number" id="manualRoe" class="form-control manual-input" step="0.1"></td>
                                     </tr>
                                     <tr>
-                                        <td>增率</td>
-                                        <td><select class="form-select period-select" data-type="revenue"><option value="月">月</option><option value="季">季</option><option value="年">年</option></select></td>
+                                        <td>營收增率</td>
+                                        <td><select class="form-select period-select" data-type="revenue"><option value="月">月</option><option value="季">季</option><option value="年">年(累計)</option></select></td>
                                         <td class="fs-5" id="displayRevenue">N/A</td>
                                         <td class="manual-input-cell"><input type="number" id="manualRevenueGrowth" class="form-control manual-input" step="0.1"></td>
                                     </tr>
                                     <tr>
-                                        <td>毛利</td>
+                                        <td>毛利率</td>
                                         <td><select class="form-select period-select" data-type="margin"><option value="季">季</option><option value="年">年</option></select></td>
                                         <td class="fs-5" id="displayMargin">N/A</td>
                                         <td class="manual-input-cell"><input type="number" id="manualProfitMargin" class="form-control manual-input" step="0.1"></td>
                                     </tr>
                                 </tbody>
                             </table>
+                            
+                            <div class="explanation mt-3">
+                                <h6>📊 專業評分項目說明</h6>
+                                <ul class="mb-0 small ps-3">
+                                    <li><strong>基本面 (35%):</strong> 依據財報數值評分 (EPS>8, ROE>15%, 營收成長>30% 為滿分)。</li>
+                                    <li><strong>技術面 (25%):</strong> 依據區間股價漲跌幅判斷動能 (漲幅>30%滿分)。</li>
+                                    <li><strong>市場面 (20%):</strong> 與大盤指數同期漲跌幅比較，勝過大盤即得分。</li>
+                                    <li><strong>消息面 (10%):</strong> 分析近期新聞關鍵字 (營收新高/成長 vs 衰退/裁員)。</li>
+                                    <li><strong>風險面 (10%):</strong> 針對財務赤字 (負EPS/ROE) 進行風險扣分。</li>
+                                </ul>
+                            </div>
                         </div>
                     </div>
 
                     <div class="col-lg-7">
                         <div class="card text-dark">
                             <div class="card-header bg-danger text-white table-header-red"><strong>專業評分</strong></div>
-                            <table class="table table-striped mb-0">
-                                <thead><tr><th>項目</th><th>權重%</th><th>得分</th><th>說明</th></tr></thead>
+                            <table class="table table-striped mb-0" id="scoreTable">
+                                <thead><tr><th class="text-center">面向</th><th>權重%</th><th>得分</th><th>說明</th></tr></thead>
                                 <tbody>
-                                    <tr><td>基本面</td><td><input type="number" data-field="basic" class="form-control weight-input" value="30" onchange="adjustWeights('basic',+this.value)"></td><td><span class="badge badge-pos fs-5" id="score_basic">0</span></td><td>財報</td></tr>
-                                    <tr><td>技術面</td><td><input type="number" data-field="technical" class="form-control weight-input" value="25" onchange="adjustWeights('technical',+this.value)"></td><td><span class="badge badge-pos fs-5" id="score_technical">${techScore}</span></td><td>${techReason}</td></tr>
-                                    <tr><td>市場面</td><td><input type="number" data-field="market" class="form-control weight-input" value="20" onchange="adjustWeights('market',+this.value)"></td><td><span class="badge badge-pos fs-5" id="score_market">${marketScore}</span></td><td>${marketReason}</td></tr>
-                                    <tr><td>消息面</td><td><input type="number" data-field="news" class="form-control weight-input" value="15" onchange="adjustWeights('news',+this.value)"></td><td><span class="badge badge-pos fs-5" id="score_news">${newsScore}</span></td><td>${newsReason}</td></tr>
-                                    <tr><td>風險面</td><td><input type="number" data-field="risk" class="form-control weight-input" value="10" onchange="adjustWeights('risk',+this.value)"></td><td><span class="badge badge-pos fs-5" id="score_risk">0</span></td><td>無風險</td></tr>
+                                    <tr>
+                                        <td class="text-center">基本面</td>
+                                        <td><input type="number" data-field="basic" class="form-control weight-input" value="${weights.basic}" onchange="adjustWeights('basic',+this.value)"></td>
+                                        <td><span class="badge badge-pos fs-5" id="score_basic">0</span></td>
+                                        <td><small>載入中...</small></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-center">技術面</td>
+                                        <td><input type="number" data-field="technical" class="form-control weight-input" value="${weights.technical}" onchange="adjustWeights('technical',+this.value)"></td>
+                                        <td><span class="badge badge-pos fs-5" id="score_technical">${techScore}</span></td>
+                                        <td><small>${techReason}</small></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-center">市場面</td>
+                                        <td><input type="number" data-field="market" class="form-control weight-input" value="${weights.market}" onchange="adjustWeights('market',+this.value)"></td>
+                                        <td><span class="badge badge-pos fs-5" id="score_market">${marketScore}</span></td>
+                                        <td><small>${marketReason}</small></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-center">消息面</td>
+                                        <td><input type="number" data-field="news" class="form-control weight-input" value="${weights.news}" onchange="adjustWeights('news',+this.value)"></td>
+                                        <td><span class="badge badge-pos fs-5" id="score_news">${newsScore}</span></td>
+                                        <td><small>${newsReason}</small></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-center">風險面</td>
+                                        <td><input type="number" data-field="risk" class="form-control weight-input" value="${weights.risk}" onchange="adjustWeights('risk',+this.value)"></td>
+                                        <td><span class="badge badge-pos fs-5" id="score_risk">${riskScore}</span></td>
+                                        <td><small>${riskReason}</small></td>
+                                    </tr>
                                 </tbody>
                             </table>
-                        </div>
-                        <div class="explanation">
-                            <h6>評分總結</h6>
-                            <p>總評分反映了當前加權平均下的投資趨勢。正分表示上漲機率高，負分表示下跌風險大。</p>
-                            <br>
-                            <div class="card mt-3 border-secondary">
-                                <div class="card-header bg-secondary text-white"><strong>📊 專業評分項目說明</strong></div>
-                                <div class="card-body p-3">
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <p class="mb-2"><strong>1. 基本面 (35%):</strong> 核心價值指標。綜合評估 EPS(獲利能力)、ROE(資金效率)、累計營收成長率(成長動能) 與 毛利率(產品競爭力)。</p>
-                                            <p class="mb-2"><strong>2. 技術面 (25%):</strong> 股價趨勢動能。計算分析期間內的股價漲跌幅，判斷當前是否處於強勢上漲或弱勢下跌軌道。</p>
-                                            <p class="mb-0"><strong>3. 市場面 (20%):</strong> 相對大盤表現。比較個股與加權指數的同期漲跌，正值代表強於大盤(領漲)，負值代表弱於大盤。</p>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <p class="mb-2"><strong>4. 消息面 (10%):</strong> 市場情緒量化。分析近期新聞關鍵字(如創新高、獲利 vs 裁員、虧損)，將質化新聞轉為量化分數。</p>
-                                            <p class="mb-0"><strong>5. 風險面 (10%):</strong> 防禦性指標。針對虧損(負EPS)、經營效率低落(負ROE)等財務警訊進行扣分，提示潛在下檔風險。</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="card mt-4">
-                    <div class="card-body"><canvas id="priceChart"></canvas></div>
+                <div class="card my-4">
+                    <div class="card-header bg-success text-white"><strong>股價歷史走勢圖 (${startDate} 至 ${endDate})</strong></div>
+                    <div class="card-body">
+                        <canvas id="priceChart"></canvas>
+                    </div>
                 </div>
             `;
 
-            // 綁定事件與更新介面 (在 HTML 生成後執行)
+            // 綁定事件與更新介面
             setupPeriodChangeListeners();
             setupManualInputListeners();
-            updateFinancialUI(); // 這裡執行才是安全的！
+            updateFinancialUI(); 
 
             // 繪圖
             new Chart(document.getElementById('priceChart'), {
@@ -882,10 +914,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     loadStockData();
-    document.addEventListener('DOMContentLoaded', () => {
-    setupPeriodChangeListeners();
-    setupManualInputListeners();
-    });
 });
 </script>
 </body>
