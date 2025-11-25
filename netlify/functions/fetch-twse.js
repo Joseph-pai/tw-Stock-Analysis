@@ -1,149 +1,48 @@
 const fetch = require('node-fetch');
 
-// 輔助函數：計算最近季營收增長率（與前一季比較）。
 /**
- * @param {Array<Array>} monthlyRevRows - 股票代碼和年份篩選後的月營收數據 [公司代碼, 資料年月(YYYYMM), 營業收入, ...]
- * @param {string} currentYear - 查詢年份 (YYYY)
- * @param {string} currentQ - 查詢季度 (Q1, Q2, Q3, Q4)
- * @returns {number | null} 季營收增率(%)
+ * 輔助函數：從數據列表中找到第一個符合公司代號的條目
+ * @param {Array} dataList - TWSE API 返回的數據列表
+ * @param {string} stockCode - 股票代號
+ * @param {string} yearMonth - 年月字串 (YYYYMM)
+ * @returns {Object|null} 找到的數據條目
  */
-function calculateQuarterlyGrowth(monthlyRevRows, currentYear, currentQ) {
-    // 1. 定義當前季度和前一季度的月份
-    const Q_MAP = {
-        'Q1': ['01', '02', '03'],
-        'Q2': ['04', '05', '06'],
-        'Q3': ['07', '08', '09'],
-        'Q4': ['10', '11', '12']
-    };
-    
-    // 計算前一季度的年份和代號 (處理跨年情況)
-    let prevYear = parseInt(currentYear);
-    let prevQ;
+const findItem = (dataList, stockCode, yearMonth) => {
+    if (!dataList) return null;
+    return dataList.find(item => 
+        (String(item.Code) === stockCode || String(item['公司代號']) === stockCode) && 
+        String(item['資料年月']).startsWith(yearMonth)
+    );
+};
 
-    switch(currentQ) {
-        case 'Q1': prevYear -= 1; prevQ = 'Q4'; break;
-        case 'Q2': prevQ = 'Q1'; break;
-        case 'Q3': prevQ = 'Q2'; break;
-        case 'Q4': prevQ = 'Q3'; break;
-        default: return null;
-    }
-    
-    const currentMonths = Q_MAP[currentQ].map(m => `${currentYear}${m}`);
-    const previousMonths = Q_MAP[prevQ].map(m => `${prevYear}${m}`);
-
-    // 2. 累加營收 (假設營業收入在月營收數據的索引 2)
-    const getCurrentRevenue = (monthCode) => {
-        // 篩選出對應月份的營收數據
-        const row = monthlyRevRows.find(row => row[1] === monthCode);
-        // row[2] 假設是營業收入欄位
-        return row && row[2] ? parseFloat(row[2]) : 0; 
-    };
-
-    const currentQuarterRevenue = currentMonths.reduce((sum, month) => sum + getCurrentRevenue(month), 0);
-    const previousQuarterRevenue = previousMonths.reduce((sum, month) => sum + getCurrentRevenue(month), 0);
-    
-    // 3. 計算增長率
-    if (previousQuarterRevenue > 0 && currentQuarterRevenue !== 0) {
-        // 季營收增率 = (本季營收 - 上季營收) / 上季營收 × 100
-        return ((currentQuarterRevenue - previousQuarterRevenue) / previousQuarterRevenue) * 100;
-    }
-
-    return null;
-}
-
-
-// 輔助函數：處理 TWSE API 獲取的數據並進行人工計算
 /**
- * @param {Array<Array>} combinedData - 從 TWSE API 獲取的所有原始數據 (陣列的陣列)。
- * @param {string} code - 股票代碼。
- * @param {string} year - 查詢年份 (YYYY)。
- * @param {string} [quarter] - 查詢季度 (Q1, Q2, Q3, Q4)。
+ * 輔助函數：從數據列表中找到最新的季度/年度數據
+ * @param {Array} dataList - TWSE API 返回的數據列表
+ * @param {string} stockCode - 股票代號
+ * @param {string} quarterEndMonth - 季度截止月份 (03, 06, 09, 12)
+ * @returns {Object|null} 找到的數據條目
  */
-function processFinancialData(combinedData, code, year, quarter) {
-    const targetPeriod = quarter ? `${year}${quarter}` : year;
-    const yearEndPeriod = `${year}Q4`; 
-
-    // 篩選數據 (TWSE API 回傳為陣列的陣列，欄位位置固定，這裡假設了常見的索引)
-    // 綜合損益表 (t187ap06_L_ci): 假設 Net Income 在 row[6], 毛利率在 row[5], EPS 在 row[7] 或 row[8]
-    const incomeStmt = combinedData.filter(row => row[0] === code && row.length > 5 && (row[1] === targetPeriod || (row[1].length === 4 && !quarter)));
+const findQuarterlyItem = (dataList, stockCode, year, quarterEndMonth) => {
+    if (!dataList) return null;
+    const targetDate = `${year}${quarterEndMonth}`;
     
-    // 資產負債表 (t187ap07_L_ci): 假設 股東權益 (Equity) 在 row[4]
-    const balanceSheet = combinedData.filter(row => row[0] === code && row.length > 3 && (row[1] === targetPeriod || row[1] === yearEndPeriod));
+    // 尋找最新的，且日期匹配的條目
+    const relevantItems = dataList.filter(item => 
+        (String(item.Code) === stockCode || String(item['公司代號']) === stockCode) && 
+        String(item['資料日期']).startsWith(targetDate)
+    );
     
-    // 月營收 (t187ap05_L): 假設 營業收入在 row[2], 月增率在 row[3], 年增率在 row[4]
-    const monthlyRev = combinedData.filter(row => row[0] === code && row[1].length === 6);
+    // 假設 TWSE API 返回的數據是按日期降序排列的，取第一個
+    return relevantItems.length > 0 ? relevantItems[0] : null;
+};
 
-    let results = {};
-    let netIncome = null;
-    
-    // 獲取當期綜合損益數據
-    const incomeRow = incomeStmt.find(row => row[1] === targetPeriod);
-    
-    // --- 1. EPS & 毛利率 (API 優先/人工計算) ---
-    if (incomeRow) {
-        // EPS (人工計算/API提供 - 取非 NaN 的值)
-        const eps = parseFloat(incomeRow[7]) || parseFloat(incomeRow[8]); 
-        if (!isNaN(eps)) results.EPS = parseFloat(eps.toFixed(2));
+// 輔助函數：安全地解析數值
+const safeParseFloat = (value) => {
+    if (value === null || value === undefined || value === 'N/A') return NaN;
+    const str = String(value).replace(/,/g, '');
+    return parseFloat(str);
+};
 
-        // 毛利率 (API 提供/人工計算 - 假設在索引 5)
-        const grossMarginRate = parseFloat(incomeRow[5]);
-        if (!isNaN(grossMarginRate)) results.GrossMarginRate = parseFloat(grossMarginRate.toFixed(2));
-        
-        // 暫存淨利用於 ROE 計算 (假設在索引 6)
-        netIncome = parseFloat(incomeRow[6]);
-    }
-
-    // --- 2. ROE (人工計算) ---
-    if (netIncome !== null) {
-        // 季度 ROE 使用季度末股東權益，年度 ROE 使用年度末 (Q4) 股東權益
-        const equityTargetPeriod = quarter ? targetPeriod : yearEndPeriod;
-        const equityRow = balanceSheet.find(row => row[1] === equityTargetPeriod);
-
-        if (equityRow) {
-            // 股東權益 (Equity) (假設在索引 4)
-            const equity = parseFloat(equityRow[4]); 
-            if (equity > 0) {
-                // ROE(%) = (淨利 / 股東權益) × 100
-                const roe = (netIncome / equity) * 100; // 人工計算
-                results.ROE = parseFloat(roe.toFixed(2));
-            }
-        }
-    }
-    
-    // --- 3. 月/季/年營收增率 ---
-    if (monthlyRev.length > 0) {
-        // 獲取最新的月營收數據，用於月增率和年增率 (年初累計)
-        const latestRev = monthlyRev.sort((a, b) => b[1].localeCompare(a[1]))[0];
-        
-        if (latestRev) {
-            // 月增率 (API 直接提供 - 假設在索引 3)
-            const monthOverMonth = parseFloat(latestRev[3]);
-            if (!isNaN(monthOverMonth)) results.MonthlyRevenueGrowth = parseFloat(monthOverMonth.toFixed(2));
-            
-            // 年增率 (API 直接提供 - 累積 - 假設在索引 4)
-            const yearOverYear = parseFloat(latestRev[4]);
-            if (!isNaN(yearOverYear)) results.AnnualRevenueGrowth = parseFloat(yearOverYear.toFixed(2));
-        }
-
-        // 季營收增率 (人工計算 - 僅在查詢季度時執行)
-        if(quarter) {
-            const qoqGrowth = calculateQuarterlyGrowth(monthlyRev, year, quarter);
-            if(qoqGrowth !== null) {
-                results.QuarterlyRevenueGrowth = parseFloat(qoqGrowth.toFixed(2));
-            }
-        }
-    }
-
-    // 格式化輸出
-    return {
-        stockCode: code,
-        period: targetPeriod,
-        data: results // 包含所有計算後的指標
-    };
-}
-
-
-// Netlify 函數主入口
 exports.handler = async (event, context) => {
     const headers = {
         'Access-Control-Allow-Origin': '*',
@@ -153,81 +52,150 @@ exports.handler = async (event, context) => {
 
     if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers };
 
-    const type = event.queryStringParameters.type; 
+    const { type, stockCode, year, quarter } = event.queryStringParameters;
 
     const sources = {
-        // [季度資料] 綜合損益表 + 資產負債表 + 月營收彙總表
+        // [季度資料] 原始的 quarterly API 集合 (前端的 fetchFullTWSEFinancials 仍會呼叫)
         quarterly: [
             'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci', // 綜合損益表
-            'https://openapi.twse.com.tw/v1/opendata/t187ap07_L_ci', // 補上資產負債表 (用於ROE計算)
-            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_fh', 
-            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd', 
-            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins',
-            'https://openapi.twse.com.tw/v1/opendata/t187ap05_L' // 月營收彙總表 (用於營收增率計算)
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_fh', // 金控
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd', // 銀行
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins',// 保險
+            'https://openapi.twse.com.tw/v1/opendata/t187ap05_L'     // 月營收
         ],
         // [年度/分析資料]
         annual: [
-            'https://openapi.twse.com.tw/v1/opendata/t187ap17_L',
+            'https://openapi.twse.com.tw/v1/opendata/t187ap17_L', // 財務比率分析
             'https://openapi.twse.com.tw/v1/opendata/t187ap46_L'
         ],
         // [月營收資料]
         monthly: [
-            'https://openapi.twse.com.tw/v1/opendata/t05st10_if'
+            'https://openapi.twse.com.tw/v1/opendata/t05st10_if' // 月營收彙總表 (較新)
         ],
         // [股票清單]
         stocks: [
-            'https://openapi.twse.com.tw/v1/opendata/t187ap03_L'
+            'https://openapi.twse.com.tw/v1/opendata/t187ap03_L' // 上市公司基本資料
         ]
     };
+
+    // ----------------------------------------------------
+    // ⚠️ 核心修正: 處理帶參數的季度數據請求 (type=quarterly_specific) ⚠️
+    // ----------------------------------------------------
+    if (type === 'quarterly_specific' && stockCode && year && quarter) {
+        
+        // 1. 定義季度截止月份和去年同期季度截止月份
+        const qMap = { 'Q1': '03', 'Q2': '06', 'Q3': '09', 'Q4': '12' };
+        const quarterEndMonth = qMap[quarter];
+        const prevYear = parseInt(year) - 1;
+        
+        if (!quarterEndMonth) {
+             return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid quarter' }) };
+        }
+        
+        try {
+            // 2. 請求兩個主要 API 數據源
+            const [ciRes, monthlyRes] = await Promise.all([
+                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci'), // 綜合損益表
+                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap05_L')  // 月營收彙總表
+            ]);
+            
+            if (!ciRes.ok || !monthlyRes.ok) {
+                 return { statusCode: ciRes.status || 500, headers, body: JSON.stringify({ error: 'Failed to fetch TWSE raw data' }) };
+            }
+
+            const ciData = await ciRes.json();
+            const monthlyData = await monthlyRes.json();
+
+            // 3. 獲取本期和去年同期的數據
+            const currentItem = findQuarterlyItem(ciData, stockCode, year, quarterEndMonth);
+            const prevItem = findQuarterlyItem(ciData, stockCode, prevYear, quarterEndMonth);
+
+            // 4. 獲取月營收數據 (用於計算季營收增長率)
+            // 季度營收是該季度三個月的營收總和 (例如 Q3 = 07+08+09)
+            const getQuarterlyRevenue = (targetYear, targetQuarter) => {
+                const startMonth = (parseInt(targetQuarter.substring(1)) - 1) * 3 + 1;
+                const monthArr = [startMonth, startMonth + 1, startMonth + 2].map(m => String(m).padStart(2, '0'));
+                
+                let totalRevenue = 0;
+                let foundCount = 0;
+
+                for (const month of monthArr) {
+                    const yearMonth = targetYear + month;
+                    const monthlyItem = findItem(monthlyData, stockCode, yearMonth);
+                    
+                    if (monthlyItem) {
+                        const revenue = safeParseFloat(monthlyItem['營業收入-當月營收']);
+                        if (!isNaN(revenue)) {
+                            totalRevenue += revenue;
+                            foundCount++;
+                        }
+                    }
+                }
+                
+                // 必須找到三個月的數據才視為有效
+                return foundCount === 3 ? totalRevenue : NaN;
+            };
+
+            const currentQuarterRevenue = getQuarterlyRevenue(year, quarter);
+            const prevQuarterRevenue = getQuarterlyRevenue(prevYear, quarter); 
+
+            // 5. 執行人工計算
+            let quarterlyRevenueGrowth = 'N/A';
+            if (!isNaN(currentQuarterRevenue) && !isNaN(prevQuarterRevenue) && prevQuarterRevenue !== 0) {
+                 const growth = ((currentQuarterRevenue - prevQuarterRevenue) / prevQuarterRevenue) * 100;
+                 quarterlyRevenueGrowth = growth.toFixed(2);
+            }
+            
+            // 6. 整合結果
+            const resultData = {
+                StockCode: stockCode,
+                Year: year,
+                Quarter: quarter,
+                // 從綜合損益表獲取 EPS/ROE/毛利率
+                EPS: currentItem ? safeParseFloat(currentItem['基本每股盈餘']) : 'N/A',
+                ROE: currentItem ? safeParseFloat(currentItem['股東權益報酬率']) : 'N/A', // 假設此 API 有 ROE
+                GrossMarginRate: currentItem ? safeParseFloat(currentItem['營業毛利率']) : 'N/A', // 假設此 API 有毛利率
+                
+                // 核心人工計算結果
+                QuarterlyRevenueGrowth: quarterlyRevenueGrowth, 
+                
+                // 額外資訊（可選）
+                CurrentQuarterRevenue: isNaN(currentQuarterRevenue) ? 'N/A' : currentQuarterRevenue,
+                PreviousQuarterRevenue: isNaN(prevQuarterRevenue) ? 'N/A' : prevQuarterRevenue,
+            };
+
+            return { statusCode: 200, headers, body: JSON.stringify({ status: 'ok', data: resultData }) };
+
+        } catch (error) {
+            console.error('Quarterly specific fetch error:', error);
+            return { statusCode: 500, headers, body: JSON.stringify({ error: `Server calculation failed: ${error.message}` }) };
+        }
+    }
+    // ----------------------------------------------------
+    // 原始邏輯：處理不帶參數的請求 (stocks, quarterly, annual, monthly)
+    // ----------------------------------------------------
 
     const targetUrls = sources[type];
 
     if (!targetUrls) {
-        return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid type' }) };
+        // 如果不是帶參數的季度請求，也不是標準 type，則返回錯誤
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid type or missing parameters' }) };
     }
 
     try {
-        const requests = targetUrls.map(url => fetch(url).then(res => res.json()).catch(err => {
-            console.error(`Error fetching ${url}:`, err);
-            return null; // 失敗時返回 null
-        }));
+        const requests = targetUrls.map(url => 
+            fetch(url, { signal: AbortSignal.timeout(10000) }) // 設置 10 秒超時
+        );
+        const responses = await Promise.all(requests);
+        const data = await Promise.all(responses.map(res => res.json()));
 
-        const results = await Promise.all(requests);
+        // 將所有數據合併成一個大陣列
+        const combinedData = data.flatMap(d => d.data || d); 
 
-        // 過濾掉失敗的請求並展開所有數據
-        const combinedData = results.filter(data => data && Array.isArray(data)).flat();
-
-        // --- 處理 'quarterly' 類型並執行人工計算 (最新財報數據) ---
-        if (type === 'quarterly') {
-            const stockCode = event.queryStringParameters.stockCode;
-            const targetYear = event.queryStringParameters.year;
-            const targetQ = event.queryStringParameters.quarter; 
-            
-            // 只有當所有必要參數都存在時才進行計算
-            if (stockCode && targetYear && targetQ) {
-                const processedData = processFinancialData(combinedData, stockCode, targetYear, targetQ);
-                return {
-                    statusCode: 200,
-                    headers,
-                    body: JSON.stringify(processedData),
-                };
-            }
-            // 如果缺少參數，則返回原始數據，讓前端自行處理錯誤或篩選
-        }
-        
-        // 對於其他類型或缺少參數的 quarterly 請求，返回合併的原始數據
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify(combinedData),
-        };
+        return { statusCode: 200, headers, body: JSON.stringify(combinedData) };
 
     } catch (error) {
-        console.error('Function error:', error);
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({ error: `Internal server error: ${error.message}` }),
-        };
+        console.error(`TWSE bulk fetch error for type ${type}:`, error);
+        return { statusCode: 500, headers, body: JSON.stringify({ error: `TWSE API fetch failed: ${error.message}` }) };
     }
 };
