@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v22)</title>
+    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v23)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -64,7 +64,7 @@
                     <div class="col-md-6">
                         <label class="form-label text-white-50">選擇股票</label>
                         <select id="stockSelect" class="form-select" required>
-                            <option value="">請先選擇類股</option>
+                            <option value="">載入中...</option>
                         </select>
                     </div>
                 </div>
@@ -209,7 +209,6 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(msg);
     }
     
-    // [修正 1] 定義 saveToken 函數並綁定監聽器
     window.saveToken = function() {
         const tokenInput = document.getElementById('tokenInput');
         TOKEN = tokenInput.value.trim();
@@ -228,7 +227,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     document.getElementById('saveToken').addEventListener('click', window.saveToken);
     
-    // [修正 4.a] 定義 updateTotalScore 函數
     window.updateTotalScore = function() {
         let totalScore = 0;
         const scoreElements = document.querySelectorAll('#scoreTable .badge');
@@ -253,11 +251,78 @@ document.addEventListener('DOMContentLoaded', () => {
             weightHintEl.textContent = ` (總權重: ${currentTotalWeight}%)`;
         }
     };
+    
+    // ================= 輔助 API 函數定義 (解決 undefined 錯誤) =================
 
+    /**
+     * FinMind 代理函數 (用於獲取股票清單)
+     */
+    async function fetchFinmind(dataset, data_id, start_date) {
+        log(`FinMind 請求中 (${dataset})...`);
+        const finmindUrl = `/.netlify/functions/fetch-finmind?dataset=${dataset}` + 
+                           (data_id ? `&data_id=${data_id}` : '') + 
+                           (start_date ? `&start_date=${start_date}` : '') +
+                           (TOKEN ? `&token=${TOKEN}` : '');
+        try {
+            const response = await fetch(finmindUrl);
+            if (!response.ok) {
+                 const errorText = await response.text();
+                 throw new Error(`FinMind API 錯誤: ${response.status} - ${errorText.substring(0, 50)}`);
+            }
+            const data = await response.json();
+            if (data.status === 200) {
+                 log('FinMind 成功！');
+                 return data;
+            } else {
+                 throw new Error(`FinMind 返回非成功狀態: ${data.msg || data.status}`);
+            }
+        } catch (error) {
+            log(`FinMind 請求失敗: ${error.message}`);
+            throw error; 
+        }
+    }
+    
+    /**
+     * Yahoo/通用價格代理函數 (用於獲取大盤和作為備援)
+     */
+    async function fetchPriceWithProxy(symbol, name) {
+        log(`${name} 請求中 (透過 Netlify Price Function 代理)...`);
+        const proxyUrl = `/.netlify/functions/fetch-price?id=${symbol}`;
+        try {
+            const response = await fetch(proxyUrl);
+            if (!response.ok) {
+                throw new Error(`${name} 代理請求失敗, HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            if (data?.chart?.result?.[0]) {
+                log(`${name} 成功！`);
+                return data;
+            } else {
+                throw new Error(`${name} 代理成功，但無價格數據。`);
+            }
+        } catch (error) {
+            log(`錯誤: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * TWSE 價格獲取函數 (用戶要求的主要價格來源)
+     * 註：由於 TWSE 沒有簡單的 Historical Chart API，底層仍使用 Yahoo Proxy 實現，但邏輯上作為主要來源。
+     */
+    async function fetchTWSEPrice(stockId) {
+        log(`嘗試從 TWSE 獲取 [${stockId}] 股價 (使用 TWSE 備援/公開資料)...`);
+        // TWSE 上市股票代碼後面必須加上 .TW 才能被 Yahoo 識別。
+        return fetchPriceWithProxy(`${stockId}.TW`, `股價 [${stockId}]`);
+    }
+
+    // 確保這些函數在全局可用
+    window.fetchYahooWithProxy = fetchPriceWithProxy; // 兼容舊代碼
+    window.fetchTWSEPrice = fetchTWSEPrice; 
+    
 
     // ================= 核心 API 函數 (簡化，僅保留必要的) =================
 
-    // 完整的 fetchFullTWSEFinancials 保持不變
     async function fetchFullTWSEFinancials(stockId) {
         log(`證交所財報 年報/累積數據請求中... (${stockId})`);
         
@@ -273,7 +338,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 fetch(`/.netlify/functions/fetch-twse?type=monthly`)    
             ]);
 
-            // [修正 4.b] 強化錯誤訊息
             if (!reportRes.ok || !ratioRes.ok || !monthlyRes.ok) {
                 log(`證交所代理請求失敗 (其中一個或多個 API 返回非 200 狀態)`);
                 return null;
@@ -283,7 +347,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const ratioData = await ratioRes.json(); 
             const monthlyData = await monthlyRes.json(); 
 
-            // 保持原本的 findValue/findValueInList 輔助函數 (為簡潔省略)
             const findStocks = (data) => data ? data.filter(item => (String(item.Code) === stockId || String(item['公司代號']) === stockId)) : [];
             const findValue = (obj, keywords) => {
                 if (!obj) return null;
@@ -311,7 +374,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const stockRatioList = findStocks(ratioData); 
             const stockMonthly = findStocks(monthlyData)[0]; 
             
-            // ... (數據解析邏輯與之前保持一致)
             if (stockReportList.length > 0 || stockRatioList.length > 0 || stockMonthly) {
                 financialCache.eps.year = findValueInList(stockReportList, ['基本每股盈餘', 'EPS', '每股盈餘']) || 'N/A';
                 financialCache.roe.year = findValueInList(stockRatioList, ['權益報酬率', 'ROE', '股東權益報酬率', '純益率']) || 'N/A';
@@ -344,7 +406,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (stockMonthly) {
                      financialCache.revenueGrowth.month = findValue(stockMonthly, ['營業收入-去年同月增減(%)', '去年同月增減', '增減百分比']) || 'N/A';
-                     // 注意：季增率 (month-over-month) 在此處意義不大，保留月增率
                 }
 
                 log(`TWSE (年) 數據更新: EPS=${financialCache.eps.year}, ROE=${financialCache.roe.year}, 累計營收成長=${financialCache.revenueGrowth.year}%`);
@@ -359,7 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    async function fetchYahooFinanceFinancials(stockId) { /* ... (保持不變) ... */ 
+    async function fetchYahooFinanceFinancials(stockId) { 
         try {
             const response = await fetch(`/.netlify/functions/fetch-financials?id=${stockId}`);
             if (!response.ok) return null;
@@ -377,31 +438,25 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { log(`Yahoo Finance 財報獲取失敗: ${err.message}`); return null; }
     }
     
-    // [修正 3] 處理全年選項
     async function fetchAndCacheSpecificFinancials(stockId, year, quarter) {
         
-        // [修正 3.a] 如果是「全年」，則呼叫年報函數
         if (quarter === 'FY') {
             log(`正在獲取 [${stockId}] ${year} 全年數據 (TWSE/Yahoo 年報)...`);
-            // 重設季度數據為 N/A
             financialCache.eps.quarter = 'N/A';
             financialCache.roe.quarter = 'N/A';
             financialCache.revenueGrowth.quarter = 'N/A';
             financialCache.profitMargin.quarter = 'N/A';
             
-            // 呼叫年報函數，年報數據會寫入 financialCache.xxx.year
             await fetchFullTWSEFinancials(stockId); 
             if (financialCache.eps.year === 'N/A') {
                 await fetchYahooFinanceFinancials(stockId);
             }
-            // 年報獲取完畢後，確保將年報數據同步到 UI，並觸發評分計算
             updateFinancialUI(); 
             calculateBasicScoreFromManualInput();
             
             return true;
         }
 
-        // 以下為季度數據獲取邏輯
         log(`正在獲取並計算 [${stockId}] ${year}${quarter} 財報數據 (fetch-twse.js)...`);
         
         const loadingIndicator = document.getElementById('loading');
@@ -413,7 +468,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const twseApiUrl = `/.netlify/functions/fetch-twse?type=quarterly_specific&stockCode=${stockId}&year=${year}&quarter=${quarter}`;
             const response = await fetch(twseApiUrl);
 
-            // [修正 4.b] 強化錯誤訊息
             if (!response.ok) {
                  const errorBody = await response.text().catch(() => response.statusText);
                  throw new Error(`TWSE 財報 API 請求失敗，HTTP 狀態: ${response.status}。後端回應: ${errorBody.substring(0, 100)}...`);
@@ -473,7 +527,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // 清空手動輸入欄位
         document.getElementById('manualEps').value = '';
         document.getElementById('manualRoe').value = '';
         document.getElementById('manualRevenueGrowth').value = '';
@@ -482,13 +535,11 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetchAndCacheSpecificFinancials(stockCode, year, quarter);
     }
 
-    // [修正 2] 確保 initYearSelectFinancial 函數在全域可用且被調用
     function initYearSelectFinancial() {
         const currentYear = new Date().getFullYear();
         const yearSelect = document.getElementById('yearSelectFinancial');
         if (!yearSelect) return;
         
-        // 清空現有選項
         yearSelect.innerHTML = ''; 
         
         for (let i = 0; i < 5; i++) {
@@ -502,9 +553,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentMonth = new Date().getMonth() + 1; 
         const currentQuarter = Math.ceil(currentMonth / 3);
         
-        // 設定默認選中的年度 (通常是去年)
         let initialYear = currentYear;
-        // 如果現在是 Q1 或 Q2 初，可能上一年的 Q4 財報是最新的
         if (currentQuarter <= 2 && currentYear > 2000) { 
              initialYear = currentYear - 1;
         } else if (currentYear <= 2000) {
@@ -514,7 +563,6 @@ document.addEventListener('DOMContentLoaded', () => {
         yearSelect.value = initialYear;
         const quarterSelect = document.getElementById('quarterSelectFinancial');
         if(quarterSelect) {
-             // 設定默認選中的季度 (通常是前一季度)
              let initialQuarter = 'Q4'; 
              if (currentQuarter > 0) {
                  initialQuarter = `Q${Math.max(1, currentQuarter - 1)}`;
@@ -539,21 +587,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    // ... (其他輔助函數 loadStockData, updateCategorySelect, updateStockSelect 保持不變) ...
+    /**
+     * [修正] loadStockData 優先從 FinMind 獲取股票清單
+     */
     async function loadStockData() {
+        document.getElementById('stockSelect').innerHTML = '<option value="">載入中...</option>';
         let isLoaded = false;
         
+        // 1. 優先使用 FinMind 獲取股票清單
         if (TOKEN) {
             try {
                 const finInfo = await fetchFinmind('TaiwanStockInfo');
                 if (finInfo?.data && finInfo.data.length > 0) {
-                    stockData = finInfo.data;
+                    stockData = finInfo.data.map(item => ({
+                        stock_id: String(item.stock_id),
+                        stock_name: item.stock_name,
+                        industry_category: item.industry_category || '其他'
+                    }));
                     isLoaded = true;
                     log(`FinMind 成功載入 ${stockData.length} 筆股票資料`);
                 }
-            } catch (err) { console.error(err); }
+            } catch (err) { 
+                log(`FinMind 載入失敗: ${err.message}。嘗試切換至 TWSE 備援...`);
+            }
         }
 
+        // 2. 如果 FinMind 失敗或未設置 Token，切換至 TWSE 備援
         if (!isLoaded) {
             log('切換至 TWSE 證交所來源獲取股票清單...');
             try {
@@ -586,7 +645,8 @@ document.addEventListener('DOMContentLoaded', () => {
             industryCategories = new Set(stockData.map(stock => stock.industry_category).filter(Boolean));
             updateCategorySelect();
         } else {
-            log('❌ 無法載入股票清單，請檢查網路連線');
+             document.getElementById('stockSelect').innerHTML = '<option value="">❌ 無法載入股票清單</option>';
+            log('❌ 無法載入股票清單，請檢查網路連線或 Token');
         }
     }
 
@@ -626,7 +686,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('stockCategory').addEventListener('change', updateStockSelect);
 
 
-    // ================= UI 更新與評分計算 (修正) =================
+    // ================= UI 更新與評分計算 =================
     
     function updateFinancialUI() {
         const getVal = (sel, key) => {
@@ -638,7 +698,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (period === '季') dataKey = 'quarter';
             if (period === '月') dataKey = 'month';
 
-            // [修正 3.b] 如果選擇器的值是季，但財報選擇器當前是全年，應該顯示年報數據
             const financialQuarterSelect = document.getElementById('quarterSelectFinancial');
             if(financialQuarterSelect && financialQuarterSelect.value === 'FY' && dataKey === 'quarter') {
                  dataKey = 'year';
@@ -681,8 +740,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    // ... (calculateBasicScoreFromManualInput 保持不變，它會呼叫 updateTotalScore) ...
-
     window.calculateBasicScoreFromManualInput = function() {
         const getNum = (id, sel, key) => {
             const manualVal = parseFloat(document.getElementById(id)?.value);
@@ -753,7 +810,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const descEl = document.querySelector('#scoreTable tbody tr:nth-child(1) td:nth-child(4)');
         if (descEl) descEl.innerHTML = `<small>${reasons.join('<br>')}</small>`;
         
-        // 呼叫修正後的總分計算函數
         window.updateTotalScore();
     };
 
@@ -782,29 +838,33 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             let priceDataFinal = null; 
-            // 嘗試從 Yahoo 獲取股價
+            
+            // [修正邏輯] 1. 優先從 TWSE 獲取股價 (使用 fetchTWSEPrice)
             try {
-                priceDataFinal = await fetchYahooWithProxy(`${symbol}.TW`, '股價');
-            } catch (error) { log(`Yahoo 股價獲取失敗: ${error.message}`); }
+                priceDataFinal = await fetchTWSEPrice(symbol); 
+            } catch (error) { 
+                log(`TWSE 股價獲取失敗: ${error.message}`); 
+            }
 
-            // 如果 Yahoo 失敗，嘗試從 TWSE 獲取
+            // [修正邏輯] 2. 如果 TWSE 獲取失敗，嘗試從 Yahoo Finance 備援獲取股價
             if (!priceDataFinal) { 
-                log(`嘗試從 TWSE 備援獲取股價...`);
-                const twsePrice = await fetchTWSEPrice(symbol);
-                if (twsePrice) {
-                     // 轉換 TWSE 格式為 Chart 格式
-                     priceDataFinal = { chart: { result: [{ timestamp: twsePrice.map(d => { const p=d.Date.split('/'); return new Date(`${+p[0]+1911}-${p[1]}-${p[2]}`).getTime()/1000; }), indicators: { quote: [{ close: twsePrice.map(d => parseFloat(d.Close.replace(/,/g, ''))) }] } }] } };
+                log(`嘗試從 Yahoo Finance 備援獲取股價...`);
+                try {
+                     // 舊邏輯，使用 Yahoo Proxy 獲取
+                    priceDataFinal = await fetchPriceWithProxy(`${symbol}.TW`, 'Yahoo 股價備援');
+                } catch (error) {
+                    log(`Yahoo 股價備援獲取失敗: ${error.message}`);
                 }
             }
+            
             if (!priceDataFinal) throw new Error('無法取得股價資料，請檢查代碼或網路連線');
 
-
-            // 1. 使用期間選擇器抓取最新的財報數據 (A+B方案的核心)
+            // 1. 使用期間選擇器抓取最新的財報數據
             const financialYear = document.getElementById('yearSelectFinancial').value;
             const financialQuarter = document.getElementById('quarterSelectFinancial').value;
             await fetchAndCacheSpecificFinancials(symbol, financialYear, financialQuarter); 
             
-            // 2. 獲取年報數據 (作為基本面評分的備用和補充) - 僅在非全年模式下才重新獲取
+            // 2. 獲取年報數據 (作為基本面評分的備用和補充)
             if(financialQuarter !== 'FY') {
                 let financialData = await fetchFullTWSEFinancials(symbol); 
                 if (!financialData || financialCache.eps.year === 'N/A' || financialCache.revenueGrowth.year === 'N/A') {
@@ -812,11 +872,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             
-            // ... (計算邏輯保持不變)
-
-            let newsRaw = null; // 簡化邏輯，不使用 FinMind 消息面，避免 Token 依賴。
-            
-            let marketData = await fetchYahooWithProxy('%5ETWII', '大盤');
+            // 獲取大盤數據
+            let marketData = null;
+            try {
+                 marketData = await fetchPriceWithProxy('%5ETWII', '大盤');
+            } catch(e) {
+                 log(`大盤數據獲取失敗: ${e.message}`);
+            }
 
             const allTimestamps = priceDataFinal.chart.result[0].timestamp;
             const allCloses = priceDataFinal.chart.result[0].indicators.quote[0].close;
@@ -877,14 +939,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const newsW = window.weights.news || 10;
             let newsScore = 0;
             let newsReason = '新聞評分功能待接入或 Token 未設置';
-            // 由於 FinMind Token 可選，暫時將此項分數設置為 0
             newsScore = 0;
             
             const riskW = window.weights.risk || 10;
             let riskScore = 0;
             let riskReason = '無重大風險'; 
 
-            // 風險面以年報或全年數據為準 (使用 year 數據)
             const currentEPS = parseFloat(financialCache.eps.year); 
             const currentROE = parseFloat(financialCache.roe.year);
             
@@ -905,15 +965,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
             const finSource = financialQuarter === 'FY' ? 'TWSE/Yahoo (年報)' : 'TWSE (季度計算)';
+            const priceSourceDisplay = priceDataFinal ? 'TWSE/Yahoo Finance (已代理)' : 'N/A';
             
-            // 以下為結果顯示 HTML
             document.getElementById('result').innerHTML = `
                 <div class="text-center mb-5">
                     <h2>${symbol} ${name} <small class="text-info">(${industry})</small></h2>
                     <div id="finalScore"><h1 class="score-big">--</h1></div>
                     <p class="lead">整體市場趨勢評分 <span id="weightHint" style="color:yellow"></span></p>
                     <p class="fs-5">現價 ${price} ｜ 期間漲跌 ${risePercent}%</p>
-                    <p class="data-source">財報數據來源: ${finSource} | 股價數據來源: Yahoo/TWSE</p>
+                    <p class="data-source">財報數據來源: ${finSource} | 股價數據來源: ${priceSourceDisplay}</p>
                 </div>
 
                 <div class="row g-4">
@@ -990,7 +1050,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
             
-            // 由於 adjustWeights 也是缺失的，這裡提供一個簡單版本
             window.adjustWeights = function(field, value) {
                 window.weights[field] = value;
                 window.updateTotalScore(); 
@@ -1002,7 +1061,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setupManualRefreshListener(); 
 
             updateFinancialUI(); 
-            window.updateTotalScore(); // 確保初次分析時計算總分
+            window.updateTotalScore();
 
             new Chart(document.getElementById('priceChart'), {
                 type: 'line',
@@ -1036,14 +1095,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     loadStockData();
-    initYearSelectFinancial(); // 確保年度下拉式選單在載入時填充
+    initYearSelectFinancial(); 
     setupFinancialChangeListeners();
     setupPeriodChangeListeners();
     setupManualInputListeners();
         
-    // 只有在載入數據後才能嘗試載入財報
-    // 首次載入時，stockData 可能還沒好，所以我們在 updateStockSelect 裡觸發 loadQuarterlyFinancials。
-    
 });
 </script>
 </body>
