@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v19)</title>
+    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v20)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -37,7 +37,7 @@
 <div class="container py-5">
 
     <h1 class="text-center mb-2">台灣股市終極專業分析器</h1>
-    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/22 專業評分詳解版 • Netlify Functions</p>
+    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/25 專業評分詳解版 • Netlify Functions</p>
 
     <div class="row justify-content-center mb-4">
         <div class="col-md-8">
@@ -48,40 +48,6 @@
             </div>
             <small class="text-white-50">免費註冊 → <a href="https://finmindtrade.com/analysis/#/account/register" target="_blank" class="text-warning">FinMind（30秒）</a> ｜ 或直接使用證交所+觀測站公開資料</small>
             <div id="tokenStatus" class="token-status mt-2"></div>
-        </div>
-    </div>
-    
-    <div class="row justify-content-center mb-4">
-        <div class="col-md-8">
-            <div class="card p-3 bg-transparent border-warning">
-                <h5 class="text-warning">最新財報數據期間選擇與刷新</h5>
-                <div class="row g-2 align-items-end">
-                    <div class="col-md-3">
-                        <label for="stockCodeFinancial" class="form-label text-white-50">股票代碼</label>
-                        <input type="text" class="form-control" id="stockCodeFinancial" value="2330" placeholder="例如: 2330">
-                    </div>
-                    <div class="col-md-3">
-                        <label for="yearSelectFinancial" class="form-label text-white-50">年度</label>
-                        <select class="form-select" id="yearSelectFinancial">
-                            </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label for="quarterSelectFinancial" class="form-label text-white-50">季度</label>
-                        <select class="form-select" id="quarterSelectFinancial">
-                            <option value="Q1">Q1</option>
-                            <option value="Q2">Q2</option>
-                            <option value="Q3">Q3</option>
-                            <option value="Q4">Q4</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <button class="btn btn-warning text-dark fw-bold w-100" type="button" id="refreshFinancialsButton" style="height: 38px;">
-                            <i class="fas fa-sync-alt"></i> 刷新財報數據
-                        </button>
-                    </div>
-                </div>
-                <small class="text-white-50 mt-2">此選擇用於獲取並計算最新的 ROE, EPS, **季營收增率** 等數據。</small>
-            </div>
         </div>
     </div>
     
@@ -102,9 +68,33 @@
                         </select>
                     </div>
                 </div>
+                
+                <div class="row g-2 mb-3 card p-3 bg-transparent border-warning">
+                    <h6 class="text-warning">財報數據查詢期間</h6>
+                    <div class="col-md-4">
+                        <label for="yearSelectFinancial" class="form-label text-white-50 small">年度</label>
+                        <select class="form-select" id="yearSelectFinancial">
+                            </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="quarterSelectFinancial" class="form-label text-white-50 small">季度</label>
+                        <select class="form-select" id="quarterSelectFinancial">
+                            <option value="Q1">Q1</option>
+                            <option value="Q2">Q2</option>
+                            <option value="Q3">Q3</option>
+                            <option value="Q4">Q4</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                         <button class="btn btn-sm btn-info text-dark fw-bold w-100" type="button" id="autoLoadFinancialsButton" style="height: 38px;">
+                            <i class="fas fa-search"></i> 載入並同步最新財報
+                        </button>
+                    </div>
+                    <small class="text-white-50 mt-2">此選擇用於獲取並計算最新的 ROE, EPS, **季營收增率** 等數據。</small>
+                </div>
                 <div class="row g-2">
                     <div class="col-auto">
-                        <label class="text-white-50 small">分析時間範圍：</label>
+                        <label class="text-white-50 small">價格分析時間範圍：</label>
                     </div>
                     <div class="col-auto">
                         <select id="dateRange" class="form-select form-select-sm date-range-input">
@@ -218,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(msg);
     }
 
-    // ================= 核心 API 函數 (原有的 fetchTWSEFinancials 變更為 fetchFullTWSEFinancials) =================
+    // ================= 核心 API 函數 =================
 
     async function fetchFinmind(dataset, dataId = '', startDate = '', retries = 3) {
         if (!TOKEN && dataset !== 'TaiwanStockInfo') return null;
@@ -275,11 +265,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    // [修改] 原本的 fetchTWSEFinancials 變更名稱並專注於年報/累積數據的備用獲取
+    // 獲取年報/累積數據
     async function fetchFullTWSEFinancials(stockId) {
         log(`證交所財報 年報/累積數據請求中... (${stockId})`);
         
-        // 僅清除年報相關的緩存
         financialCache.eps.year = 'N/A';
         financialCache.roe.year = 'N/A';
         financialCache.profitMargin.year = 'N/A';
@@ -408,9 +397,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    // ================= [新增] ⚠️ A+B 方案核心邏輯 ⚠️ =================
+    // ================= [修正] A+B 方案核心邏輯 (解決 N/A 問題的前端呼叫) =================
 
-    // [新增] 負責從 Netlify 函數獲取特定期間的財報數據並更新緩存
+    // [修正] 負責從 Netlify 函數獲取特定期間的財報數據並更新緩存
     async function fetchAndCacheSpecificFinancials(stockId, year, quarter) {
         log(`正在獲取並計算 [${stockId}] ${year}${quarter} 財報數據 (fetch-twse.js)...`);
         
@@ -420,13 +409,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            // 注意：這裡假設您的 fetch-twse.js Netlify 函數已經修改為可接受 year/quarter 參數
-            const twseApiUrl = `/.netlify/functions/fetch-twse?type=quarterly&stockCode=${stockId}&year=${year}&quarter=${quarter}`;
+            // 關鍵：呼叫修改後的 fetch-twse.js
+            const twseApiUrl = `/.netlify/functions/fetch-twse?type=quarterly_specific&stockCode=${stockId}&year=${year}&quarter=${quarter}`;
             const response = await fetch(twseApiUrl);
 
             if (!response.ok) throw new Error(`TWSE 財報 API 請求失敗: ${response.statusText}`);
             
-            // 這裡假設後端會返回一個包含計算後季增率等數據的 JSON
             const processedData = await response.json(); 
             
             if (processedData && processedData.data) {
@@ -442,7 +430,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 月增率和累積年增率也一併更新
                 financialCache.revenueGrowth.month = data.MonthlyRevenueGrowth !== undefined ? data.MonthlyRevenueGrowth : 'N/A';
                 if (data.AnnualRevenueGrowth !== undefined) {
-                    // 如果後端有計算累積年增率，則更新
                     financialCache.revenueGrowth.year = data.AnnualRevenueGrowth;
                 }
 
@@ -459,7 +446,6 @@ document.addEventListener('DOMContentLoaded', () => {
             log(`季財報數據獲取失敗: ${err.message}`);
             return false;
         } finally {
-             // 只有當主分析沒有在跑時，才隱藏 loading
              if (document.getElementById('analyzeForm').dataset.isSubmitting !== 'true') {
                  loadingIndicator.style.display = 'none';
              }
@@ -467,18 +453,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    // [新增] A/B 觸發調用的主函數 (觸發獲取與更新)
+    // [修正] A/B 觸發調用的主函數 (觸發獲取與更新)
     const loadQuarterlyFinancials = async () => {
-        const stockCode = document.getElementById('stockCodeFinancial').value.trim() || '2330'; // 設置默認值以防止空值
+        const stockCodeSelect = document.getElementById('stockSelect');
+        const stockCode = stockCodeSelect ? stockCodeSelect.value.trim() : ''; 
         const year = document.getElementById('yearSelectFinancial').value;
         const quarter = document.getElementById('quarterSelectFinancial').value;
         
         if (!stockCode || !year || !quarter) {
-            log("請輸入股票代碼並選擇完整的期間，才能刷新財報數據。");
+            log("請選擇股票代碼並選擇完整的期間，才能刷新財報數據。");
             return;
         }
         
-        // 清空手動輸入欄位，避免覆蓋自動計算結果
         document.getElementById('manualEps').value = '';
         document.getElementById('manualRoe').value = '';
         document.getElementById('manualRevenueGrowth').value = '';
@@ -491,6 +477,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadStockData() {
         let isLoaded = false;
+        // ... (loadStockData 內容保持不變，略過以節省篇幅)
         if (TOKEN) {
             try {
                 const finInfo = await fetchFinmind('TaiwanStockInfo');
@@ -539,6 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateCategorySelect() {
+        // ... (updateCategorySelect 內容保持不變，略過以節省篇幅)
         const categorySelect = document.getElementById('stockCategory');
         categorySelect.innerHTML = '<option value="all">全部類股</option>';
         industryCategories.forEach(category => {
@@ -553,6 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateStockSelect() {
+        // ... (updateStockSelect 內容保持不變，略過以節省篇幅)
         const category = document.getElementById('stockCategory').value;
         const stockSelect = document.getElementById('stockSelect');
         stockSelect.innerHTML = '';
@@ -567,16 +556,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (filteredStocks.length === 0) stockSelect.appendChild(new Option('該類股無股票資料', ''));
         
-        // [新增] 當股票清單更新時，嘗試同步財報查詢的股票代碼
-        if (stockSelect.value && document.getElementById('stockCodeFinancial')) {
-             document.getElementById('stockCodeFinancial').value = stockSelect.value;
-             // 嘗試自動觸發一次最新的財報數據載入
+        // 股票清單更新時，自動嘗試載入最新財報數據
+        if (stockSelect.value) {
              loadQuarterlyFinancials();
         }
     }
     document.getElementById('stockCategory').addEventListener('change', updateStockSelect);
 
     document.getElementById('saveToken').onclick = async () => {
+        // ... (saveToken 內容保持不變，略過以節省篇幅)
         TOKEN = document.getElementById('tokenInput').value.trim();
         if (TOKEN) {
             document.getElementById('tokenStatus').innerHTML = '<span style="color:#ffc107">正在透過代理驗證 Token...</span>';
@@ -619,55 +607,47 @@ document.addEventListener('DOMContentLoaded', () => {
             option.textContent = year;
             yearSelect.appendChild(option);
         }
-        // 預設選擇最近一期財報截止的年度（例如現在是Q4，則選擇今年；現在是Q1，則選擇去年）
+        
         const currentMonth = new Date().getMonth() + 1; // 1-12
         const currentQuarter = Math.ceil(currentMonth / 3);
         
         let initialYear = currentYear;
-        // 假設 Q1/Q2 財報尚未發布或剛發布，預設從去年開始
         if (currentQuarter <= 2) {
              initialYear = currentYear - 1;
         } 
         
         yearSelect.value = initialYear;
-        // 預設季度
         const quarterSelect = document.getElementById('quarterSelectFinancial');
         if(quarterSelect) {
-             let initialQuarter = 'Q4'; // 預設 Q4
+             let initialQuarter = 'Q4'; 
              if (currentQuarter > 0) {
-                 // 設置為上一季 (例如現在是 Q2，上季是 Q1)
                  initialQuarter = `Q${Math.max(1, currentQuarter - 1)}`;
              }
              quarterSelect.value = initialQuarter;
         }
     }
     
-    // [新增] A 方案：設置期間變更監聽器 (自動觸發)
+    // [修正] A 方案：設置期間變更監聽器 (自動觸發)
     function setupFinancialChangeListeners() {
-        const stockInput = document.getElementById('stockCodeFinancial');
+        const stockSelect = document.getElementById('stockSelect');
         const yearSelect = document.getElementById('yearSelectFinancial');
         const quarterSelect = document.getElementById('quarterSelectFinancial');
+        const autoLoadButton = document.getElementById('autoLoadFinancialsButton'); // 新按鈕 ID
         
-        if (stockInput && yearSelect && quarterSelect) {
-            stockInput.addEventListener('change', loadQuarterlyFinancials); 
+        if (stockSelect && yearSelect && quarterSelect && autoLoadButton) {
+            stockSelect.addEventListener('change', loadQuarterlyFinancials); 
             yearSelect.addEventListener('change', loadQuarterlyFinancials);
             quarterSelect.addEventListener('change', loadQuarterlyFinancials);
-            log("A 方案 (財報期間自動更新) 監聽器已啟用。");
+            autoLoadButton.addEventListener('click', loadQuarterlyFinancials); // 手動載入
+            log("A 方案 (財報期間自動/手動更新) 監聽器已啟用。");
         }
     }
     
-    // [新增] B 方案：設置手動刷新按鈕監聽器 (手動觸發)
-    function setupManualRefreshListener() {
-        const refreshButton = document.getElementById('refreshFinancialsButton');
-        if (refreshButton) {
-            refreshButton.addEventListener('click', loadQuarterlyFinancials);
-            log("B 方案 (手動刷新按鈕) 監聽器已啟用。");
-        }
-    }
-
+    // [移除] 舊的 setupManualRefreshListener，功能已合併到 setupFinancialChangeListeners
 
     function updateFinancialUI() {
         const getVal = (sel, key) => {
+            // ... (getVal 邏輯保持不變，略過以節省篇幅)
             const el = document.querySelector(`.period-select[data-type="${sel}"]`);
             if (!el) return 0;
             const period = el.value;
@@ -686,7 +666,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const inputEl = document.getElementById(id.replace('display', 'manual'));
             const displayVal = (val === 'N/A') ? 'N/A' : `${val.toFixed(2)}${suffix}`;
             if (displayEl) displayEl.textContent = displayVal;
-            // 由於我們新增了自動觸發，清空手動輸入框的邏輯應該在 loadQuarterlyFinancials 執行
         };
 
         const eps = getVal('eps', 'eps');
@@ -717,6 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.calculateBasicScoreFromManualInput = function() {
+        // ... (calculateBasicScoreFromManualInput 邏輯保持不變，略過以節省篇幅)
         const getNum = (id, sel, key) => {
             const manualVal = parseFloat(document.getElementById(id)?.value);
             if (!isNaN(manualVal)) return manualVal;
@@ -786,6 +766,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     window.adjustWeights = function(changedField, newValue) {
+        // ... (adjustWeights 邏輯保持不變，略過以節省篇幅)
         const oldValue = weights[changedField];
         const diff = newValue - oldValue;
         if (diff === 0) return;
@@ -814,6 +795,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function updateWeightInputs() {
+        // ... (updateWeightInputs 邏輯保持不變，略過以節省篇幅)
         Object.keys(weights).forEach(key => {
             const input = document.querySelector(`.weight-input[data-field="${key}"]`);
             if (input) input.value = Math.round(weights[key]);
@@ -821,6 +803,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateTotalScore() {
+        // ... (updateTotalScore 邏輯保持不變，略過以節省篇幅)
         const sum = Object.values(weights).reduce((a,b) => a + +b, 0);
         const hintEl = document.getElementById('weightHint');
         if (hintEl) hintEl.textContent = Math.round(sum) === 100 ? '' : `(目前總權重 ${Math.round(sum)}%)`;
@@ -859,7 +842,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('result').style.display = 'none';
         document.getElementById('logContent').textContent = '';
         
-        // [新增] 標記表單正在提交
         document.getElementById('analyzeForm').dataset.isSubmitting = 'true';
 
         try {
@@ -879,16 +861,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (!priceDataFinal) throw new Error('無法取得股價資料，請稍後再試');
 
-            // [修改] 財報獲取邏輯：
-            // 1. 同步財報期間選擇器的股票代碼
-            document.getElementById('stockCodeFinancial').value = symbol; 
-            
-            // 2. 使用期間選擇器抓取最新的季度財報數據 (A+B方案的核心)
+            // 1. 使用期間選擇器抓取最新的季度財報數據 (A+B方案的核心)
             const financialYear = document.getElementById('yearSelectFinancial').value;
             const financialQuarter = document.getElementById('quarterSelectFinancial').value;
             await fetchAndCacheSpecificFinancials(symbol, financialYear, financialQuarter); // 更新季度緩存
             
-            // 3. 獲取年報數據 (作為基本面評分的備用和補充)
+            // 2. 獲取年報數據 (作為基本面評分的備用和補充)
             let financialData = await fetchFullTWSEFinancials(symbol); // 獲取年報/累積數據
             if (!financialData || financialCache.eps.year === 'N/A' || financialCache.revenueGrowth.year === 'N/A') {
                  financialData = await fetchYahooFinanceFinancials(symbol); // Yahoo 年報備用
@@ -980,7 +958,6 @@ document.addEventListener('DOMContentLoaded', () => {
             let riskScore = 0;
             let riskReason = '無重大風險'; 
 
-            // 這裡使用緩存中的 "年" 數據進行風險評估 (這是您原始的邏輯)
             const currentEPS = parseFloat(financialCache.eps.year); 
             const currentROE = parseFloat(financialCache.roe.year);
             
@@ -1001,7 +978,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const finSource = financialData?.source || '無';
             
-            // 以下為結果顯示 HTML (保持不變)
+            // 以下為結果顯示 HTML (已修改，加入 Refresh 按鈕)
             document.getElementById('result').innerHTML = `
                 <div class="text-center mb-5">
                     <h2>${symbol} ${name} <small class="text-info">(${industry})</small></h2>
@@ -1015,7 +992,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="col-lg-5">
                         <div class="card text-dark">
                             <div class="card-header bg-primary text-white"><strong>最新財報數據</strong></div>
-                            <div class="financial-period"><small class="text-muted">請使用下方選單切換分析維度</small></div>
                             <table class="table table-striped mb-0">
                                 <thead><tr><th>面向</th><th>期間</th><th>數值</th><th class="manual-label">輸入</th></tr></thead>
                                 <tbody>
@@ -1045,6 +1021,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                     </tr>
                                 </tbody>
                             </table>
+                            <div class="card-footer bg-white text-end">
+                                <button class="btn btn-warning text-dark fw-bold" type="button" id="refreshFinancialsButton" style="width: 150px;">
+                                    <i class="fas fa-sync-alt"></i> 刷新數據
+                                </button>
+                            </div>
                             
                             <div class="explanation mt-3">
                                 <h6>📊 專業評分項目說明</h6>
@@ -1080,9 +1061,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="card-body"><canvas id="priceChart"></canvas></div>
                 </div>
             `;
-
+            
+            // 重新設置所有監聽器 (包括新增的刷新按鈕)
             setupPeriodChangeListeners();
             setupManualInputListeners();
+            setupManualRefreshListener(); // 確保新的按鈕被監聽
+
             updateFinancialUI(); 
 
             new Chart(document.getElementById('priceChart'), {
@@ -1104,23 +1088,33 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('result').innerHTML = `<div class="alert alert-danger text-center py-5"><h3>${err.message}</h3></div>`;
             document.getElementById('result').style.display = 'block';
         }
-        // [新增] 結束提交標記並隱藏 loading
         document.getElementById('analyzeForm').dataset.isSubmitting = 'false';
         document.getElementById('loading').style.display = 'none';
     };
+    
+    // [新增] 設置手動刷新按鈕監聽器 (手動觸發)
+    function setupManualRefreshListener() {
+        // [修正] 由於按鈕是動態生成的，這裡需要確保按鈕存在
+        const refreshButton = document.getElementById('refreshFinancialsButton');
+        if (refreshButton) {
+            // 注意：這裡我們使用 loadQuarterlyFinancials，但它需要正確獲取股票代碼
+            refreshButton.addEventListener('click', loadQuarterlyFinancials);
+            log("B 方案 (手動刷新按鈕) 監聽器已啟用。");
+        }
+    }
+
 
     loadStockData();
     document.addEventListener('DOMContentLoaded', () => {
-    // [新增] 初始化和監聽器
-    initYearSelectFinancial(); 
-    setupFinancialChangeListeners();
-    setupManualRefreshListener();
-    
-    setupPeriodChangeListeners();
-    setupManualInputListeners();
-    
-    // 初始載入時，嘗試使用默認值載入財報數據
-    loadQuarterlyFinancials();
+        initYearSelectFinancial(); 
+        setupFinancialChangeListeners();
+        // setupManualRefreshListener 必須在 analyzeForm.onsubmit 後調用
+        
+        setupPeriodChangeListeners();
+        setupManualInputListeners();
+        
+        // 初始載入時，嘗試使用默認值載入財報數據
+        loadQuarterlyFinancials();
     });
 });
 </script>
