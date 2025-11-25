@@ -32,6 +32,9 @@
         .financial-period { background-color: rgba(255, 255, 255, 0.1); padding: 10px; border-radius: 5px; margin-bottom: 10px; }
         .basis-box { background: rgba(0,0,0,0.3); border-left: 4px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 4px; }
         td, th { vertical-align: middle; }
+        .metric-explanation { background: rgba(255,255,255,0.9); color: #333; padding: 15px; border-radius: 8px; margin-top: 15px; }
+        .metric-explanation h6 { color: #8B0000; font-weight: bold; margin-bottom: 10px; }
+        .metric-item { margin-bottom: 8px; font-size: 0.85rem; }
     </style>
 </head>
 <body>
@@ -859,6 +862,22 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </tbody>
                             </table>
                             
+                            <div class="metric-explanation">
+                                <h6>📈 財務指標專業說明</h6>
+                                <div class="metric-item">
+                                    <strong>EPS (每股盈餘):</strong> 衡量公司為每股普通股賺取的利潤。≥8元為優秀，≥5元為良好，≥3元為及格，負值表示虧損。
+                                </div>
+                                <div class="metric-item">
+                                    <strong>ROE (股東權益報酬率):</strong> 衡量公司運用股東資本的效率。≥15%為優秀，≥10%為良好，≥5%為及格，負值表示資本運用效率差。
+                                </div>
+                                <div class="metric-item">
+                                    <strong>營收增率:</strong> 反映公司營收成長動能。≥30%為高速成長，≥10%為穩健成長，正增長為基本要求，負增長需警惕。
+                                </div>
+                                <div class="metric-item">
+                                    <strong>毛利率:</strong> 顯示公司產品或服務的定價能力與成本控制。≥50%為高毛利行業，≥20%為行業平均水平。
+                                </div>
+                            </div>
+
                             <div class="explanation mt-3">
                                 <h6>📊 專業評分項目說明</h6>
                                 <ul class="mb-0 small ps-3">
