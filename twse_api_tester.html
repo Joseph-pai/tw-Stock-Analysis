@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>證交所 API 格式測試工具</title>
+    <style>
+        body {
+            font-family: 'Microsoft JhengHei', Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .endpoint {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+        }
+        .endpoint h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .result {
+            background: #1e1e1e;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .success { color: #28a745; font-weight: bold; }
+        .error { color: #dc3545; font-weight: bold; }
+        .warning { color: #ffc107; font-weight: bold; }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+            color: #667eea;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-card h4 {
+            margin: 0 0 10px 0;
+            color: #667eea;
+            font-size: 14px;
+        }
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        .field-list {
+            columns: 2;
+            column-gap: 20px;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+        .note {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 證交所 API 格式測試工具</h1>
+        
+        <div class="note">
+            <strong>⚠️ 注意：</strong> 此工具需要上傳到 Netlify 才能使用（透過 Netlify Functions 代理）<br>
+            <strong>📍 使用方式：</strong> 將此檔案放在專案根目錄，上傳後訪問 <code>https://twstock-analysis.netlify.app/test-api.html</code>
+        </div>
+
+        <div style="text-align: center; margin-bottom: 30px;">
+            <button onclick="runAllTests()" id="testBtn">開始測試所有 API</button>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            ⏳ 正在測試 API，請稍候...
+        </div>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // 使用 Netlify Functions 代理
+        const endpoints = [
+            {
+                name: '綜合損益表 (季度/年度)',
+                proxyUrl: '/.netlify/functions/fetch-twse?type=quarterly',
+                usage: '用於: 年度/季度 EPS, 毛利率, 淨利',
+                searchKey: '2330'
+            },
+            {
+                name: '財務比率 (年度)',
+                proxyUrl: '/.netlify/functions/fetch-twse?type=annual',
+                usage: '用於: ROE 等財務比率',
+                searchKey: '2330'
+            },
+            {
+                name: '月營收表',
+                proxyUrl: '/.netlify/functions/fetch-twse?type=monthly',
+                usage: '用於: 月營收增率, 年營收增率',
+                searchKey: '2330'
+            },
+            {
+                name: '股票清單',
+                proxyUrl: '/.netlify/functions/fetch-twse?type=stocks',
+                usage: '用於: 獲取股票代碼和名稱',
+                searchKey: '2330'
+            }
+        ];
+
+        async function runAllTests() {
+            const btn = document.getElementById('testBtn');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            
+            btn.disabled = true;
+            loading.style.display = 'block';
+            results.innerHTML = '';
+
+            for (const endpoint of endpoints) {
+                await testEndpoint(endpoint);
+            }
+
+            loading.style.display = 'none';
+            btn.disabled = false;
+        }
+
+        async function testEndpoint(endpoint) {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'endpoint';
+            
+            let html = `
+                <h3>${endpoint.name}</h3>
+                <div class="info">
+                    <strong>📍 代理端點:</strong> ${endpoint.proxyUrl}<br>
+                    <strong>📝 用途:</strong> ${endpoint.usage}
+                </div>
+            `;
+
+            try {
+                const response = await fetch(endpoint.proxyUrl);
+                
+                if (!response.ok) {
+                    html += `<p class="error">❌ HTTP 錯誤: ${response.status} ${response.statusText}</p>`;
+                    resultDiv.innerHTML = html;
+                    document.getElementById('results').appendChild(resultDiv);
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (!Array.isArray(data)) {
+                    html += `<p class="error">❌ 格式錯誤: 不是陣列格式</p>`;
+                    html += `<div class="result">${JSON.stringify(data, null, 2)}</div>`;
+                    resultDiv.innerHTML = html;
+                    document.getElementById('results').appendChild(resultDiv);
+                    return;
+                }
+
+                const totalRows = data.length;
+                
+                if (totalRows === 0) {
+                    html += `<p class="warning">⚠️ 無數據返回</p>`;
+                    resultDiv.innerHTML = html;
+                    document.getElementById('results').appendChild(resultDiv);
+                    return;
+                }
+
+                const firstRow = data[0];
+                const isObject = typeof firstRow === 'object' && !Array.isArray(firstRow);
+                const isArray = Array.isArray(firstRow);
+
+                html += `
+                    <div class="stats">
+                        <div class="stat-card">
+                            <h4>資料格式</h4>
+                            <div class="value">${isObject ? '物件 ✅' : isArray ? '陣列 ⚠️' : '未知'}</div>
+                        </div>
+                        <div class="stat-card">
+                            <h4>總筆數</h4>
+                            <div class="value">${totalRows}</div>
+                        </div>
+                        <div class="stat-card">
+                            <h4>欄位數量</h4>
+                            <div class="value">${isObject ? Object.keys(firstRow).length : isArray ? firstRow.length : '?'}</div>
+                        </div>
+                    </div>
+                `;
+
+                if (isObject) {
+                    const fields = Object.keys(firstRow);
+                    html += `
+                        <p class="success">✅ 格式: 物件 (可用欄位名稱存取)</p>
+                        <details open>
+                            <summary><strong>📋 可用欄位 (${fields.length} 個):</strong></summary>
+                            <div class="field-list">
+                                ${fields.map(f => `• <code>${f}</code>`).join('<br>')}
+                            </div>
+                        </details>
+                    `;
+
+                    // 搜尋範例股票
+                    const sample = data.find(row => 
+                        row['公司代碼'] === endpoint.searchKey || 
+                        row['Code'] === endpoint.searchKey ||
+                        row['stock_id'] === endpoint.searchKey
+                    );
+
+                    if (sample) {
+                        // 高亮關鍵欄位
+                        const keyFields = ['公司代碼', 'Code', 'stock_id', '資料年月', 'EPS', 'ROE', '營業毛利率(%)', '營業收入-去年同月增減(%)'];
+                        const highlightedSample = {};
+                        
+                        Object.keys(sample).forEach(key => {
+                            if (keyFields.some(kf => key.includes(kf))) {
+                                highlightedSample[`⭐ ${key}`] = sample[key];
+                            } else {
+                                highlightedSample[key] = sample[key];
+                            }
+                        });
+
+                        html += `
+                            <details open>
+                                <summary><strong>🎯 範例數據 (股票代碼: ${endpoint.searchKey}) - 關鍵欄位已標記 ⭐</strong></summary>
+                                <div class="result">${JSON.stringify(highlightedSample, null, 2)}</div>
+                            </details>
+                        `;
+                    } else {
+                        html += `<p class="warning">⚠️ 未找到股票代碼 ${endpoint.searchKey} 的數據</p>`;
+                    }
+
+                } else if (isArray) {
+                    html += `
+                        <p class="warning">⚠️ 格式: 陣列 (需用索引存取，較不方便)</p>
+                        <p><strong>📊 第一筆數據 (用於判斷欄位順序):</strong></p>
+                        <div class="result">${JSON.stringify(firstRow, null, 2)}</div>
+                    `;
+
+                    const sampleIdx = data.findIndex(row => 
+                        (Array.isArray(row) && row[0] === endpoint.searchKey) ||
+                        row.公司代碼 === endpoint.searchKey
+                    );
+                    
+                    if (sampleIdx >= 0) {
+                        html += `
+                            <p><strong>🎯 範例數據 (股票代碼: ${endpoint.searchKey}, 索引: ${sampleIdx}):</strong></p>
+                            <div class="result">${JSON.stringify(data[sampleIdx], null, 2)}</div>
+                        `;
+                    }
+                }
+
+                html += `
+                    <details>
+                        <summary><strong>📄 前 3 筆原始數據:</strong></summary>
+                        <div class="result">${JSON.stringify(data.slice(0, 3), null, 2)}</div>
+                    </details>
+                `;
+
+            } catch (error) {
+                html += `<p class="error">❌ 錯誤: ${error.message}</p>`;
+                console.error('測試錯誤:', error);
+            }
+
+            resultDiv.innerHTML = html;
+            document.getElementById('results').appendChild(resultDiv);
+        }
+
+        // 頁面載入時的提示
+        window.onload = function() {
+            console.log('%c🔍 證交所 API 測試工具已就緒', 'color: #667eea; font-size: 16px; font-weight: bold;');
+            console.log('此工具透過 Netlify Functions 代理訪問證交所 API');
+            
+            // 檢查是否在本地打開
+            if (window.location.protocol === 'file:') {
+                const note = document.querySelector('.note');
+                note.style.background = '#f8d7da';
+                note.style.borderColor = '#dc3545';
+                note.innerHTML = `
+                    <strong>❌ 錯誤：</strong> 檢測到從本地檔案系統開啟<br>
+                    <strong>解決方式：</strong><br>
+                    1. 將此 HTML 檔案上傳到你的 Netlify 專案根目錄<br>
+                    2. 訪問 <code>https://twstock-analysis.netlify.app/test-api.html</code><br>
+                    3. 或使用本地伺服器（如 Live Server 插件）開啟
+                `;
+            }
+        };
+    </script>
+</body>
+</html>
