@@ -261,12 +261,22 @@
                         </details>
                     `;
 
-                    // 搜尋範例股票
-                    const sample = data.find(row => 
-                        row['公司代碼'] === endpoint.searchKey || 
+                    // 搜尋範例股票 - 更智能的搜尋
+                    let sample = data.find(row => 
+                        row['公司代號'] === endpoint.searchKey || 
+                        row['公司代碼'] === endpoint.searchKey ||
                         row['Code'] === endpoint.searchKey ||
                         row['stock_id'] === endpoint.searchKey
                     );
+
+                    // 如果沒找到，嘗試顯示前5個公司代號
+                    if (!sample) {
+                        const companyCodes = data.slice(0, 10).map(row => 
+                            row['公司代號'] || row['公司代碼'] || row['Code'] || '未知'
+                        );
+                        html += `<p class="warning">⚠️ 未找到股票代碼 ${endpoint.searchKey}，前10筆的公司代號: ${companyCodes.join(', ')}</p>`;
+                        sample = data[0]; // 顯示第一筆作為範例
+                    }
 
                     if (sample) {
                         // 高亮關鍵欄位
@@ -287,8 +297,6 @@
                                 <div class="result">${JSON.stringify(highlightedSample, null, 2)}</div>
                             </details>
                         `;
-                    } else {
-                        html += `<p class="warning">⚠️ 未找到股票代碼 ${endpoint.searchKey} 的數據</p>`;
                     }
 
                 } else if (isArray) {
