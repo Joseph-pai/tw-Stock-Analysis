@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>證交所 API 格式測試工具</title>
+    <style>
+        body {
+            font-family: 'Microsoft JhengHei', Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .endpoint {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+        }
+        .endpoint h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .result {
+            background: #1e1e1e;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .success { color: #28a745; font-weight: bold; }
+        .error { color: #dc3545; font-weight: bold; }
+        .warning { color: #ffc107; font-weight: bold; }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+            color: #667eea;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-card h4 {
+            margin: 0 0 10px 0;
+            color: #667eea;
+            font-size: 14px;
+        }
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        .field-list {
+            columns: 2;
+            column-gap: 20px;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+        .note {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .download-link {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            text-decoration: none;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .download-link:hover {
+            background: #218838;
+        }
+        .raw-data {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 證交所 API 文件下載測試工具</h1>
+        
+        <div class="note">
+            <strong>📍 Base URL:</strong> <code>https://openapi.twse.com.tw/v1</code><br>
+            <strong>📝 說明:</strong> 這些 API 端點返回文件下載，測試內容類型和文件格式<br>
+            <strong>⚠️ 注意:</strong> 由於 CORS 限制，直接下載可能受限，建議在伺服器端使用
+        </div>
+
+        <div style="text-align: center; margin-bottom: 30px;">
+            <button onclick="runAllTests()" id="testBtn">開始測試所有 API</button>
+            <button onclick="testFinancialAPIs()" style="background: #28a745;">測試財務報表 API</button>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            ⏳ 正在測試 API 文件下載，請稍候...
+        </div>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // TWSE 文件下載 API 端點
+        const endpoints = [
+            {
+                name: '上市公司每月營業收入彙總表',
+                path: '/opendata/t187ap05_L',
+                category: 'financial',
+                description: 'CSV/JSON 格式的月營收數據',
+                expectedType: 'application/json'
+            },
+            {
+                name: '上市公司綜合損益表(一般業)',
+                path: '/opendata/t187ap06_L_ci',
+                category: 'financial',
+                description: '綜合損益表數據文件',
+                expectedType: 'application/json'
+            },
+            {
+                name: '上市公司資產負債表(一般業)',
+                path: '/opendata/t187ap07_L_ci',
+                category: 'financial',
+                description: '資產負債表數據文件',
+                expectedType: 'application/json'
+            },
+            {
+                name: '上市公司各產業EPS統計資訊',
+                path: '/opendata/t187ap14_L',
+                category: 'financial',
+                description: '各產業EPS統計數據',
+                expectedType: 'application/json'
+            },
+            {
+                name: '上市公司營益分析查詢彙總表',
+                path: '/opendata/t187ap17_L',
+                category: 'financial',
+                description: '營益分析數據文件',
+                expectedType: 'application/json'
+            },
+            {
+                name: '上市個股日本益比、殖利率及股價淨值比',
+                path: '/exchangeReport/BMTBBU_ALL',
+                category: 'trading',
+                description: '個股評價指標數據',
+                expectedType: 'application/json'
+            },
+            {
+                name: '上市個股日成交資訊',
+                path: '/exchangeReport/STOCK_DAY_ALL',
+                category: 'trading',
+                description: '每日成交數據文件',
+                expectedType: 'application/json'
+            },
+            {
+                name: '上市個股月成交資訊',
+                path: '/exchangeReport/FMSRFK_ALL',
+                category: 'trading',
+                description: '每月成交統計文件',
+                expectedType: 'application/json'
+            },
+            {
+                name: '每日收盤行情-大盤統計資訊',
+                path: '/exchangeReport/WL_INDEX',
+                category: 'trading',
+                description: '大盤統計數據文件',
+                expectedType: 'application/json'
+            },
+            {
+                name: '集中市場外資及陸資持股前20名',
+                path: '/fund/WL_0FIIS_sort_20',
+                category: 'trading',
+                description: '外資持股排名數據',
+                expectedType: 'application/json'
+            },
+            {
+                name: '上市公司基本資料',
+                path: '/opendata/t187ap03_L',
+                category: 'governance',
+                description: '公司基本資料文件',
+                expectedType: 'application/json'
+            },
+            {
+                name: '上市公司股利分派情形',
+                path: '/opendata/t187ap45_L',
+                category: 'governance',
+                description: '股利分派數據文件',
+                expectedType: 'application/json'
+            },
+            {
+                name: '上市公司董事酬金相關資訊',
+                path: '/opendata/t187ap29_A_L',
+                category: 'governance',
+                description: '董事酬金數據文件',
+                expectedType: 'application/json'
+            },
+            {
+                name: '上市公司每日重大訊息',
+                path: '/opendata/t187ap04_L',
+                category: 'governance',
+                description: '重大訊息數據文件',
+                expectedType: 'application/json'
+            },
+            {
+                name: '發行量加權股價指數歷史資料',
+                path: '/indicesReport/MI_5MINS_HIST',
+                category: 'indices',
+                description: '加權指數歷史數據',
+                expectedType: 'application/json'
+            },
+            {
+                name: '臺灣50指數歷史資料',
+                path: '/indicesReport/TAI501',
+                category: 'indices',
+                description: '台灣50指數數據',
+                expectedType: 'application/json'
+            },
+            {
+                name: '寶島股價指數歷史資料',
+                path: '/indicesReport/FRMSA',
+                category: 'indices',
+                description: '寶島股價指數數據',
+                expectedType: 'application/json'
+            }
+        ];
+
+        async function runAllTests() {
+            const btn = document.getElementById('testBtn');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            
+            btn.disabled = true;
+            loading.style.display = 'block';
+            results.innerHTML = '';
+
+            for (const endpoint of endpoints) {
+                await testFileDownload(endpoint);
+                // 添加延遲避免過度頻繁請求
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+            loading.style.display = 'none';
+            btn.disabled = false;
+        }
+
+        async function testFinancialAPIs() {
+            const btn = document.getElementById('testBtn');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            
+            btn.disabled = true;
+            loading.style.display = 'block';
+            results.innerHTML = '';
+
+            const financialEndpoints = endpoints.filter(ep => ep.category === 'financial');
+
+            for (const endpoint of financialEndpoints) {
+                await testFileDownload(endpoint);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+            loading.style.display = 'none';
+            btn.disabled = false;
+        }
+
+        async function testFileDownload(endpoint) {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'endpoint';
+            
+            const apiUrl = `https://openapi.twse.com.tw/v1${endpoint.path}`;
+            
+            let html = `
+                <h3>${endpoint.name}</h3>
+                <div class="info">
+                    <strong>📍 API 端點:</strong> ${endpoint.path}<br>
+                    <strong>📝 描述:</strong> ${endpoint.description}<br>
+                    <strong>🔗 完整 URL:</strong> <code>${apiUrl}</code>
+                </div>
+            `;
+
+            try {
+                console.log(`測試文件下載: ${endpoint.name} - ${apiUrl}`);
+                
+                // 使用 HEAD 請求先檢查內容類型
+                const headResponse = await fetch(apiUrl, { 
+                    method: 'HEAD',
+                    mode: 'no-cors'
+                }).catch(e => null);
+
+                // 嘗試獲取文件內容
+                const response = await fetch(apiUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json, text/csv, */*'
+                    }
+                });
+                
+                if (!response.ok) {
+                    html += `<p class="error">❌ HTTP 錯誤: ${response.status} ${response.statusText}</p>`;
+                    resultDiv.innerHTML = html;
+                    document.getElementById('results').appendChild(resultDiv);
+                    return;
+                }
+
+                // 檢查內容類型
+                const contentType = response.headers.get('content-type') || 'unknown';
+                const contentLength = response.headers.get('content-length') || 'unknown';
+                
+                html += `
+                    <div class="stats">
+                        <div class="stat-card">
+                            <h4>內容類型</h4>
+                            <div class="value">${contentType.includes('json') ? 'JSON ✅' : contentType.includes('csv') ? 'CSV ✅' : contentType}</div>
+                        </div>
+                        <div class="stat-card">
+                            <h4>文件大小</h4>
+                            <div class="value">${contentLength !== 'unknown' ? (contentLength / 1024).toFixed(2) + ' KB' : '未知'}</div>
+                        </div>
+                        <div class="stat-card">
+                            <h4>狀態</h4>
+                            <div class="value">${response.ok ? '成功 ✅' : '失敗 ❌'}</div>
+                        </div>
+                    </div>
+                `;
+
+                // 直接下載連結
+                html += `
+                    <div>
+                        <a href="${apiUrl}" class="download-link" target="_blank" download>
+                            📥 直接下載文件
+                        </a>
+                    </div>
+                `;
+
+                // 嘗試讀取內容
+                try {
+                    if (contentType.includes('json')) {
+                        const data = await response.json();
+                        html += `
+                            <p class="success">✅ 成功解析 JSON 數據</p>
+                            <details open>
+                                <summary><strong>📊 JSON 數據預覽 (前3筆):</strong></summary>
+                                <div class="result">${JSON.stringify(Array.isArray(data) ? data.slice(0, 3) : data, null, 2)}</div>
+                            </details>
+                        `;
+                    } else if (contentType.includes('csv') || contentType.includes('text')) {
+                        const text = await response.text();
+                        const lines = text.split('\n').slice(0, 10); // 只顯示前10行
+                        html += `
+                            <p class="success">✅ 成功讀取文本數據</p>
+                            <details open>
+                                <summary><strong>📊 文件內容預覽 (前10行):</strong></summary>
+                                <div class="raw-data">${lines.join('\n')}</div>
+                            </details>
+                        `;
+                    } else {
+                        // 二進制文件或其他格式
+                        const blob = await response.blob();
+                        html += `
+                            <p class="warning">⚠️ 二進制文件格式: ${contentType}</p>
+                            <p>文件大小: ${(blob.size / 1024).toFixed(2)} KB</p>
+                        `;
+                    }
+                } catch (parseError) {
+                    html += `<p class="warning">⚠️ 無法解析內容: ${parseError.message}</p>`;
+                }
+
+            } catch (error) {
+                html += `<p class="error">❌ 請求失敗: ${error.message}</p>`;
+                
+                if (error.message.includes('Failed to fetch') || error.message.includes('CORS')) {
+                    html += `
+                        <div class="note">
+                            <strong>🔧 解決方案:</strong><br>
+                            1. 使用伺服器端代理繞過 CORS 限制<br>
+                            2. 直接點擊上方"直接下載文件"連結<br>
+                            3. 在後端程式碼中調用此 API
+                        </div>
+                    `;
+                }
+                
+                console.error('測試錯誤:', error);
+            }
+
+            resultDiv.innerHTML = html;
+            document.getElementById('results').appendChild(resultDiv);
+        }
+
+        // 頁面載入時的提示
+        window.onload = function() {
+            console.log('%c🔍 證交所文件下載 API 測試工具已就緒', 'color: #667eea; font-size: 16px; font-weight: bold;');
+            console.log('Base URL: https://openapi.twse.com.tw/v1');
+            console.log('這些 API 返回文件下載，而非直接 JSON 響應');
+            
+            // 顯示使用說明
+            const note = document.querySelector('.note');
+            note.innerHTML += `
+                <br><strong>🎯 測試重點:</strong>
+                <ul style="margin: 5px 0; padding-left: 20px;">
+                    <li>檢查文件內容類型 (JSON/CSV)</li>
+                    <li>驗證文件可訪問性</li>
+                    <li>測試直接下載功能</li>
+                    <li>預覽文件內容格式</li>
+                </ul>
+            `;
+        };
+    </script>
+</body>
+</html>
