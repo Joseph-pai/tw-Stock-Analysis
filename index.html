@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Structured v21)</title>
+    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v22)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -104,7 +104,7 @@
     <div id="loading" class="text-center my-5" style="display:none;">
         <div class="spinner-border text-warning" style="width:4rem;height:4rem;"></div>
         <h4 class="mt-3">正在進行多維度數據分析...</h4>
-        <small class="text-white-50">整合損益表、資產負債表與月營收數據</small>
+        <small class="text-white-50">整合損益表、資產負債表與月營收數據 (自動補算中)</small>
     </div>
 
     <div id="result" style="display:none;"></div>
@@ -121,8 +121,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let TOKEN = '';
     try { TOKEN = localStorage.getItem('joseph_pai_token_2025') || ''; } catch(e) {}
 
-    // 財務數據快取 (結構化)
-    // 這裡儲存從後端獲取的所有原始數據，讓 UI 可以隨時切換而不需重新請求
     let financialCache = {
         eps: { quarters: {}, year: 'N/A' },
         roe: { quarters: {}, year: 'N/A' },
@@ -132,10 +130,8 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     let stockData = [];
-    let industryCategories = new Set();
     window.weights = { basic:35, technical:25, market:20, news:10, risk:10 };
 
-    // 產業別代碼對照表
     const twseIndustryMap = {
         "01": "水泥工業", "02": "食品工業", "03": "塑膠工業", "04": "紡織纖維", "05": "電機機械",
         "06": "電器電纜", "07": "化學生技醫療", "08": "玻璃陶瓷", "09": "造紙工業", "10": "鋼鐵工業",
@@ -146,7 +142,6 @@ document.addEventListener('DOMContentLoaded', () => {
         "31": "其他電子業"
     };
 
-    // UI 設定
     document.getElementById('tokenInput').value = TOKEN;
     document.getElementById('tokenStatus').innerHTML = TOKEN ? '<span class="text-success">Token 已載入</span>' : '<span class="text-warning">未設定 Token (使用基本功能)</span>';
     
@@ -174,11 +169,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ================= 核心：數據獲取與處理 =================
 
-    // 1. 獲取並緩存結構化財務數據
     async function fetchTWSEFinancials(stockId) {
         log(`正在從 TWSE 獲取 ${stockId} 的完整財報數據...`);
-        
-        // 重置快取
         financialCache = {
             eps: { quarters: {}, year: 'N/A' },
             roe: { quarters: {}, year: 'N/A' },
@@ -188,17 +180,12 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         try {
-            // 呼叫後端 (fetch-twse.js) 執行多維度獲取與計算
-            // 後端會自動處理 404 錯誤並進行備援計算 (如毛利率)
             const response = await fetch(`/.netlify/functions/fetch-twse?type=financials&stock_id=${stockId}`);
-            
             if (!response.ok) throw new Error(`API 回應錯誤: ${response.status}`);
             
             const data = await response.json();
-            
             if (data.error) throw new Error(data.error);
 
-            // 更新快取
             financialCache = {
                 eps: data.eps || { quarters: {}, year: 'N/A' },
                 roe: data.roe || { quarters: {}, year: 'N/A' },
@@ -208,10 +195,6 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             log(`✅ 財報數據獲取成功 (來源: ${financialCache.source})`);
-            log(`  - 季報資料: ${Object.keys(financialCache.eps.quarters).length > 0 ? '有' : '無'}`);
-            log(`  - 年報資料: ${financialCache.eps.year !== 'N/A' ? '有' : '無'}`);
-            log(`  - 月營收: ${Object.keys(financialCache.revenueGrowth.months).length} 筆`);
-
             return data;
 
         } catch (err) {
@@ -220,14 +203,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 2. Yahoo Finance 備援
     async function fetchYahooFinanceFinancials(stockId) {
         try {
             const response = await fetch(`/.netlify/functions/fetch-financials?id=${stockId}`);
             if (!response.ok) return null;
             const res = await response.json();
             if (res && !res.error) {
-                // 將 Yahoo 數據映射到結構化快取
                 financialCache.eps.year = res.defaultKeyStatistics?.trailingEps?.raw || 'N/A';
                 financialCache.roe.year = res.financialData?.returnOnEquity?.raw ? (res.financialData.returnOnEquity.raw * 100).toFixed(2) : 'N/A';
                 financialCache.revenueGrowth.year = res.financialData?.revenueGrowth?.raw ? (res.financialData.revenueGrowth.raw * 100).toFixed(2) : 'N/A';
@@ -239,7 +220,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-    // 3. 獲取股價 (Yahoo Proxy / TWSE)
     async function fetchYahooWithProxy(symbol, logName) {
         log(`${logName} 請求中...`);
         try {
@@ -259,7 +239,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { return null; }
     }
 
-    // 4. 新聞 (FinMind)
     async function fetchFinmindNews(stockId, startDate) {
         if (!TOKEN) return null;
         try {
@@ -272,15 +251,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ================= UI 更新邏輯 =================
 
-    // 更新財務數據 UI (根據選擇的期間)
     function updateFinancialUI() {
         const getVal = (type, key) => {
             const select = document.querySelector(`.period-select[data-type="${type}"]`);
             if (!select) return 'N/A';
             
-            const period = select.value; // "季", "年", "月"
+            const period = select.value; 
             const dataObj = financialCache[key];
-
             if (!dataObj) return 'N/A';
 
             let val = 'N/A';
@@ -288,22 +265,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (period === '年' || period === '年(累計)') {
                 val = dataObj.year;
             } else if (period === '季') {
-                // 自動取「最新」的一季數據
-                const qs = Object.keys(dataObj.quarters || {}).sort(); // Q1, Q2, Q3, Q4...
+                const qs = Object.keys(dataObj.quarters || {}).sort(); 
                 if (qs.length > 0) {
-                    const latestQ = qs[qs.length - 1]; // 取最後一個
+                    const latestQ = qs[qs.length - 1]; 
                     val = dataObj.quarters[latestQ];
-                    // 可選：更新 Label 顯示具體季度 (e.g. 2024Q3)
-                    // log(`顯示 ${key} 季度數據: ${latestQ} = ${val}`);
                 }
             } else if (period === '月') {
-                // 自動取「最新」的一個月數據
-                // 注意：這裡假設 key 是 "Latest" (後端處理過) 或 "YYYYMM"
                 if (dataObj.months) {
-                     // 如果有 "Latest" key (後端計算好的)
                      if (dataObj.months['Latest']) val = dataObj.months['Latest'];
                      else {
-                         // 否則取 key 最大的
                          const ms = Object.keys(dataObj.months).sort();
                          if (ms.length > 0) val = dataObj.months[ms[ms.length - 1]];
                      }
@@ -319,7 +289,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const displayVal = (val === 'N/A') ? 'N/A' : `${parseFloat(val).toFixed(2)}${suffix}`;
             if (el) el.textContent = displayVal;
             
-            // 只有當輸入框為空時，才更新 placeholder
             if (input && input.value === '') {
                 input.placeholder = (val !== 'N/A') ? parseFloat(val).toFixed(2) : '手動輸入';
             }
@@ -333,14 +302,13 @@ document.addEventListener('DOMContentLoaded', () => {
         calculateBasicScoreFromManualInput();
     }
 
-    // 計算基本面評分
     window.calculateBasicScoreFromManualInput = function() {
         const getScoreVal = (manualId, type, key) => {
-            // 1. 優先使用手動輸入
+            // 1. 手動優先
             const manual = document.getElementById(manualId);
             if (manual && manual.value !== '') return parseFloat(manual.value);
 
-            // 2. 嘗試從當前 UI 選定的期間獲取
+            // 2. UI 期間
             const select = document.querySelector(`.period-select[data-type="${type}"]`);
             const period = select ? select.value : '年';
             
@@ -353,15 +321,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (qs.length > 0) val = dataObj.quarters[qs[qs.length - 1]];
             } else if (period === '月') {
                 if (dataObj.months && dataObj.months['Latest']) val = dataObj.months['Latest'];
-                else {
-                    const ms = Object.keys(dataObj.months || {}).sort();
-                    if (ms.length > 0) val = dataObj.months[ms[ms.length - 1]];
-                }
             }
 
-            // 3. 備援機制：如果選定期間無數據，嘗試退回到 "Year" 數據 (避免分數歸零)
+            // 3. 備援：若無數據則退回年度數據
             if ((val === 'N/A' || val === null) && dataObj.year !== 'N/A' && dataObj.year !== null) {
-                // log(`${key} 當前期間無數據，使用年度數據備援`);
                 val = dataObj.year;
             }
 
@@ -428,7 +391,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.adjustWeights = function(field, val) {
         window.weights[field] = parseFloat(val);
-        // 簡單的權重自動平衡邏輯 (可選)
         const total = Object.values(window.weights).reduce((a,b)=>a+b,0);
         document.getElementById('weightHint').textContent = total !== 100 ? `(總權重: ${total}%)` : '';
         calculateBasicScoreFromManualInput();
@@ -437,7 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateTotalScore() {
         const getScore = (id) => {
             const el = document.getElementById(id);
-            return el ? parseFloat(el.innerText.replace('+','')) : 0;
+            return el ? parseFloat(el.innerText.replace(/[+]/g, '')) : 0;
         }
         const s = {
             basic: getScore('score_basic'),
@@ -446,17 +408,17 @@ document.addEventListener('DOMContentLoaded', () => {
             news: getScore('score_news'),
             risk: getScore('score_risk')
         };
-        const total = s.basic + s.technical + s.market + s.news + s.risk;
-        const final = Math.max(-100, Math.min(100, total)); // 總分範圍假設 0-100 或 -100-100
+        const totalRaw = s.basic + s.technical + s.market + s.news + s.risk;
+        
+        // 限制總分在 -30 到 +30 之間
+        const final = Math.max(-30, Math.min(30, Math.round(totalRaw * 0.3))); 
         
         const finalEl = document.getElementById('finalScore');
-        const color = final >= 60 ? 'text-success' : (final >= 0 ? 'text-warning' : 'text-danger');
-        if (finalEl) finalEl.innerHTML = `<h1 class="score-big ${color}">${final}</h1>`;
+        const color = final > 0 ? 'text-danger' : (final < 0 ? 'text-success' : 'text-warning');
+        if (finalEl) finalEl.innerHTML = `<h1 class="score-big ${color}">${final > 0 ? '+' : ''}${final}%</h1>`;
     }
 
-    // ================= 股票清單載入 =================
     async function loadStockData() {
-        // 先嘗試 FinMind
         if (TOKEN) {
             try {
                 const url = `/.netlify/functions/fetch-finmind?dataset=TaiwanStockInfo&token=${TOKEN}`;
@@ -470,7 +432,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch(e) {}
         }
         
-        // 備援：TWSE
         log('載入股票清單中...');
         try {
             const res = await fetch('/.netlify/functions/fetch-twse?type=stocks');
@@ -482,7 +443,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     industry_category: twseIndustryMap[item['產業別']] || item['產業別'] || '其他'
                 })).filter(s => s.stock_id && s.stock_name);
                 
-                // 去重
                 const seen = new Set();
                 stockData = stockData.filter(el => {
                     const duplicate = seen.has(el.stock_id);
@@ -516,8 +476,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (filtered.length === 0) sel.add(new Option('無資料', ''));
         
-        // 為了效能，若全部類股太多，可只顯示前 100 筆或提示搜尋
-        // 這裡直接全部加入
         filtered.forEach(s => {
             sel.add(new Option(`${s.stock_id} ${s.stock_name}`, s.stock_id));
         });
@@ -529,7 +487,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if(t) { localStorage.setItem('joseph_pai_token_2025', t); alert('Token 已儲存'); location.reload(); }
     });
 
-    // ================= 主分析流程 =================
     document.getElementById('analyzeForm').onsubmit = async (e) => {
         e.preventDefault();
         const symbol = document.getElementById('stockSelect').value;
@@ -545,18 +502,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
             
-            // 1. 取得基本資料 (名稱/產業)
             const info = stockData.find(s => s.stock_id === symbol);
             const name = info ? info.stock_name : symbol;
             const industry = info ? info.industry_category : '未知';
 
-            // 2. 獲取股價
             let priceData = await fetchYahooWithProxy(`${symbol}.TW`, '股價');
             if (!priceData) {
                 log('Yahoo 股價失敗，嘗試 TWSE...');
                 const twseData = await fetchTWSEPrice(symbol);
                 if (twseData) {
-                    // 轉換 TWSE 格式為 Chart 格式
                     const closes = twseData.map(d => parseFloat(d.Close.replace(/,/g,'')));
                     const times = twseData.map(d => {
                         const parts = d.Date.split('/');
@@ -567,23 +521,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (!priceData) throw new Error('無法取得股價資料');
 
-            // 3. 獲取財務數據 (呼叫新的結構化 API)
             await fetchTWSEFinancials(symbol);
-
-            // 4. 獲取新聞 (選填)
             const newsData = await fetchFinmindNews(symbol, startDate);
-
-            // 5. 獲取大盤 (用於比較)
             const marketData = await fetchYahooWithProxy('%5ETWII', '大盤');
 
-            // --- 數據處理與渲染 ---
-            
-            // 股價計算
             const quotes = priceData.chart.result[0].indicators.quote[0].close;
             const times = priceData.chart.result[0].timestamp;
             const startTs = new Date(startDate).getTime() / 1000;
             
-            // 過濾時間範圍
             const validData = times.map((t, i) => ({ t, p: quotes[i] })).filter(d => d.t >= startTs && d.p);
             if (validData.length === 0) throw new Error('此期間無股價資料');
             
@@ -593,7 +538,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const startPrice = closes[0];
             const risePct = ((currentPrice - startPrice) / startPrice * 100).toFixed(2);
 
-            // 技術面評分
             let techScore = 0, techReason = '';
             const techW = window.weights.technical;
             if (risePct >= 30) { techScore = techW; techReason = `漲幅 ${risePct}% 強勢`; }
@@ -601,11 +545,9 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (risePct <= -10) { techScore = -techW * 0.5; techReason = `跌幅 ${risePct}% 弱勢`; }
             else { techScore = 0; techReason = `漲幅 ${risePct}% 盤整`; }
 
-            // 市場面評分
             let marketScore = 0, marketReason = '無資料';
             if (marketData) {
                 const mQuotes = marketData.chart.result[0].indicators.quote[0].close;
-                // 簡化：取最後一段漲幅比較
                 const mStart = mQuotes[mQuotes.length - closes.length] || mQuotes[0];
                 const mEnd = mQuotes[mQuotes.length - 1];
                 const mRise = ((mEnd - mStart) / mStart * 100);
@@ -616,7 +558,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 else { marketScore = window.weights.market * 0.3; marketReason = `與大盤同步`; }
             }
 
-            // 消息面評分
             let newsScore = 0, newsReason = '無重大新聞';
             if (newsData && newsData.data.length > 0) {
                 let pos = 0, neg = 0;
@@ -628,7 +569,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 else if (neg > pos) { newsScore = -window.weights.news; newsReason = `利空新聞 (${pos} vs ${neg})`; }
             }
 
-            // 風險面 (基於財報)
             let riskScore = 0, riskReason = '財務穩健';
             const epsYear = parseFloat(financialCache.eps.year);
             if (!isNaN(epsYear) && epsYear < 0) {
@@ -636,7 +576,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 riskReason = `年度 EPS ${epsYear} 為虧損狀態`;
             }
 
-            // 渲染 HTML
             const resultDiv = document.getElementById('result');
             resultDiv.innerHTML = `
                 <div class="text-center mb-5">
@@ -687,10 +626,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </table>
                                 <div class="metric-explanation mt-3">
                                     <h6>📈 指標說明</h6>
-                                    <div class="metric-item"><strong>EPS:</strong> 每股盈餘，公司獲利能力的絕對指標。</div>
-                                    <div class="metric-item"><strong>ROE:</strong> 股東權益報酬率，資金運用的效率。</div>
-                                    <div class="metric-item"><strong>營收增率:</strong> 反映公司成長動能 (月/季/年)。</div>
-                                    <div class="metric-item"><strong>毛利率:</strong> (營收-成本)/營收，反映產品競爭力。</div>
+                                    <div class="metric-item"><strong>EPS:</strong> 每股盈餘 (系統自動將累計值轉為單季)。</div>
+                                    <div class="metric-item"><strong>ROE:</strong> 股東權益報酬率 (淨利/權益)。</div>
+                                    <div class="metric-item"><strong>營收增率:</strong> 反映成長動能 (月/季/年)。</div>
+                                    <div class="metric-item"><strong>毛利率:</strong> (營收-成本)/營收，若無數據則自動補算。</div>
                                 </div>
                             </div>
                         </div>
@@ -742,11 +681,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
-            // 設定監聽器
             document.querySelectorAll('.period-select').forEach(s => s.addEventListener('change', updateFinancialUI));
             document.querySelectorAll('.manual-input').forEach(i => i.addEventListener('input', calculateBasicScoreFromManualInput));
             
-            // 繪圖
             new Chart(document.getElementById('priceChart'), {
                 type: 'line',
                 data: {
@@ -768,7 +705,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // 初始化數值顯示
             updateFinancialUI();
             
             document.getElementById('result').style.display = 'block';
@@ -781,7 +717,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('loading').style.display = 'none';
     };
 
-    // 啟動
     loadStockData();
 });
 </script>
