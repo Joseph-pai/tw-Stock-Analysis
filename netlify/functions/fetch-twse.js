@@ -7,133 +7,341 @@ exports.handler = async (event, context) => {
         'Access-Control-Allow-Methods': 'GET, OPTIONS'
     };
 
-    if (event.httpMethod === 'OPTIONS') {
-        return { statusCode: 200, headers };
-    }
+    if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers };
 
     const type = event.queryStringParameters?.type;
     const stockId = event.queryStringParameters?.stock_id;
 
+    console.log(`收到請求: type=${type}, stock_id=${stockId}`);
+
+    // === 結構化財務數據查詢 ===
     if (type === 'financials' && stockId) {
         return await getStructuredFinancials(stockId, headers);
     }
-    
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid type or missing stock_id' }) };
-};
 
-/**
- * 根據股票代號獲取結構化財務數據
- * @param {string} stockId - 股票代號 (e.g., "2330")
- * @param {object} headers - 響應標頭
- * @returns {Promise<object>} 包含財務指標的物件
- */
-async function getStructuredFinancials(stockId, headers) {
-    console.log(`開始獲取股票 ${stockId} 的結構化財務數據`);
-    const result = {
-        eps: { quarters: {}, year: 'N/A' },
-        roe: { quarters: {}, year: 'N/A' },
-        revenueGrowth: { months: {}, quarters: {}, year: 'N/A' },
-        profitMargin: { quarters: {}, year: 'N/A' },
-        source: 'TWSE (Multi-API v2)'
+    // === 原有邏輯：獲取原始數據 ===
+    const sources = {
+        quarterly: [
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci',
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_fh',
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd',
+            'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins'
+        ],
+        annual: [
+            'https://openapi.twse.com.tw/v1/opendata/t187ap17_L'
+        ],
+        monthly: [
+            'https://openapi.twse.com.tw/v1/opendata/t187ap05_L'
+        ],
+        stocks: [
+            'https://openapi.twse.com.tw/v1/opendata/t187ap03_L'
+        ],
+        balance: [
+            'https://openapi.twse.com.tw/v1/opendata/t187ap07_L_ci',
+            'https://openapi.twse.com.tw/v1/opendata/t187ap07_L_fh',
+            'https://openapi.twse.com.tw/v1/opendata/t187ap07_L_bd',
+            'https://openapi.twse.com.tw/v1/opendata/t187ap07_L_ins'
+        ]
     };
 
+    const targetUrls = sources[type];
+    if (!targetUrls) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid type' }) };
+    }
+
     try {
-        // 1. 並行抓取所有必要的 API 端點數據
-        console.log("正在並行抓取綜合損益表、資產負債表及營益分析表...");
-        const [incomeStatementData, balanceSheetData, financialAnalysisData] = await Promise.all([
-            fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_X_ci').then(r => r.ok ? r.json().then(d => d.data || []).catch(() => []) : []),
-            fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_X_ci').then(r => r.ok ? r.json().then(d => d.data || []).catch(() => []) : []),
-            fetch('https://openapi.twse.com.tw/v1/opendata/t187ap17_L').then(r => r.ok ? r.json().then(d => d.data || []).catch(() => []) : [])
-        ]);
+        const requests = targetUrls.map(url => fetch(url).then(res => {
+            if (!res.ok) return [];
+            return res.json().catch(() => []);
+        }).catch(() => []));
         
-        console.log(`原始數據獲取成功: 損益表(${incomeStatementData.length}筆), 資產負債表(${balanceSheetData.length}筆), 營益分析(${financialAnalysisData.length}筆)`);
+        const results = await Promise.all(requests);
+        const combinedData = results.flat().filter(item => item && (item['公司代號'] || item['公司代碼']));
 
-        // 2. 從各 API 數據中過濾出目標公司的數據
-        const targetIncomeData = incomeStatementData.filter(row => String(row['公司代號'] || '') === String(stockId));
-        const targetBalanceData = balanceSheetData.filter(row => String(row['公司代號'] || '') === String(stockId));
-        const targetFinancialData = financialAnalysisData.filter(row => String(row['公司代號'] || '') === String(stockId));
+        return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify(combinedData),
+        };
+    } catch (error) {
+        console.error('原始數據獲取錯誤:', error);
+        return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
+    }
+};
 
-        console.log(`過濾後數據: 損益表(${targetIncomeData.length}筆), 資產負債表(${targetBalanceData.length}筆), 營益分析(${targetFinancialData.length}筆)`);
+// === 核心：結構化財務數據處理 ===
+async function getStructuredFinancials(stockId, headers) {
+    try {
+        console.log(`開始獲取股票 ${stockId} 的結構化財務數據`);
 
-        if (targetIncomeData.length === 0 && targetBalanceData.length === 0) {
-            console.warn(`未在 API 中找到股票 ${stockId} 的財務數據，可能為上櫃或非一般業類型。`);
-            return { statusCode: 404, headers, body: JSON.stringify({ error: `Financial data not found for stock ${stockId}.` }) };
-        }
-
-        // 3. 處理數據，計算各種財務指標
-        // 假設數據已按時間排序 (舊到新)，取倒數第一筆為最新季，倒數第五筆為去年同季 (需有至少5季資料)
-        const latestQuarterData = targetIncomeData.length > 0 ? targetIncomeData[targetIncomeData.length - 1] : null;
-        const latestBalanceData = targetBalanceData.length > 0 ? targetBalanceData[targetBalanceData.length - 1] : null;
-        const latestFinancialData = targetFinancialData.length > 0 ? targetFinancialData[targetFinancialData.length - 1] : null;
-
-        if (!latestQuarterData) {
-            console.warn("無法獲取最新的綜合損益表數據。");
-            // 如果沒有損益表數據，則大部分指標無法計算，直接返回 result 的初始值
-        } else {
-            const year = latestQuarterData['年度'];
-            const quarter = latestQuarterData['季別'];
-            const qKey = `Q${quarter}`;
+        // 1. 並行抓取所有需要的數據源
+        const [incomeRes, balanceRes, revenueRes, ratioRes] = await Promise.all([
+            // 綜合損益表（包含 EPS、淨利）
+            Promise.all([
+                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci'),
+                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_fh'),
+                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd'),
+                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins')
+            ]).then(responses => Promise.all(responses.map(r => r.ok ? r.json() : []))),
             
-            // --- EPS (每股盈餘) ---
-            const epsValue = parseNumericValue(latestQuarterData['基本每股盈餘（元）']);
-            if (!isNaN(epsValue)) {
-                result.eps.quarters[qKey] = epsValue;
-                result.eps.year = epsValue; // 年度 EPS 通常取最新季的數值
-            }
+            // 資產負債表（包含股東權益）
+            Promise.all([
+                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_ci'),
+                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_fh'),
+                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_bd'),
+                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_ins')
+            ]).then(responses => Promise.all(responses.map(r => r.ok ? r.json() : []))),
+            
+            // 月營收（包含月/年營收增率）
+            fetch('https://openapi.twse.com.tw/v1/opendata/t187ap05_L')
+                .then(r => r.ok ? r.json() : [])
+                .catch(() => []),
+            
+            // 營益分析（包含毛利率）
+            fetch('https://openapi.twse.com.tw/v1/opendata/t187ap17_L')
+                .then(r => r.ok ? r.json() : [])
+                .catch(() => [])
+        ]);
 
-            // --- ROE (股東權益報酬率) ---
-            if (latestBalanceData) {
-                const netIncome = parseNumericValue(latestQuarterData['淨利（淨損）歸屬於母公司業主']);
-                const shareholdersEquity = parseNumericValue(latestBalanceData['歸屬於母公司業主之權益合計']);
+        // 2. 合併並過濾該股票的數據
+        const allIncome = incomeRes.flat().filter(row => row['公司代號'] === stockId);
+        const allBalance = balanceRes.flat().filter(row => row['公司代號'] === stockId);
+        const allRevenue = Array.isArray(revenueRes) ? revenueRes.filter(row => 
+            row['公司代號'] === stockId
+        ) : [];
+        const allRatio = Array.isArray(ratioRes) ? ratioRes.filter(row => 
+            row['公司代號'] === stockId
+        ) : [];
 
-                if (!isNaN(netIncome) && !isNaN(shareholdersEquity) && shareholdersEquity > 0) {
-                    const roeValue = (netIncome / shareholdersEquity) * 100;
-                    result.roe.quarters[qKey] = parseFloat(roeValue.toFixed(2));
-                    result.roe.year = parseFloat(roeValue.toFixed(2)); // 季度 ROE 作為年度參考
-                }
-            }
+        console.log(`找到數據: 損益表 ${allIncome.length}, 資產負債表 ${allBalance.length}, 月營收 ${allRevenue.length}, 營益分析 ${allRatio.length}`);
 
-            // --- 毛利率 ---
-            const revenue = parseNumericValue(latestQuarterData['營業收入']);
-            const cost = parseNumericValue(latestQuarterData['營業成本']);
-            if (!isNaN(revenue) && !isNaN(cost) && revenue > 0) {
-                const profitMargin = ((revenue - cost) / revenue) * 100;
-                result.profitMargin.quarters[qKey] = parseFloat(profitMargin.toFixed(2));
-                result.profitMargin.year = parseFloat(profitMargin.toFixed(2)); // 季度毛利率作為年度參考
-            }
-        }
-        
-        // 4. 使用 t187ap17_L API 獲取更穩定的營收成長率 (該 API 專門提供此類比較數據)
-        if (latestFinancialData) {
-            const year = latestFinancialData['年度'];
-            const revenueGrowthValue = parseNumericValue(latestFinancialData['前期比較增減(%)']);
-            if (!isNaN(revenueGrowthValue)) {
-                 result.revenueGrowth.year = parseFloat(revenueGrowthValue.toFixed(2));
-            }
-        }
+        // 3. 解析並結構化數據
+        const result = parseFinancialData(allIncome, allBalance, allRevenue, allRatio);
+
+        return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify(result)
+        };
 
     } catch (error) {
         console.error('getStructuredFinancials error:', error);
-        return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ error: error.message, stack: error.stack })
+        };
     }
-
-    console.log(`財務數據獲取完畢: ${JSON.stringify(result, null, 2)}`);
-    return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify(result)
-    };
 }
 
-/**
- * 輔助函數：將包含千分位逗號的字串轉換為浮點數
- * @param {string} value - 需要轉換的值
- * @returns {number} 轉換後的數字，如果無法轉換則返回 NaN
- */
-function parseNumericValue(value) {
-    if (value === undefined || value === null || value === '') {
-        return NaN;
+// === 核心：數據解析函數 ===
+function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
+    const result = {
+        eps: { quarters: {}, year: null },
+        roe: { quarters: {}, year: null },
+        revenueGrowth: { months: {}, quarters: {}, year: null },
+        profitMargin: { quarters: {}, year: null },
+        _debug: {
+            incomeCount: incomeData.length,
+            balanceCount: balanceData.length,
+            revenueCount: revenueData.length,
+            ratioCount: ratioData.length
+        }
+    };
+
+    // === 解析 EPS ===
+    incomeData.forEach(row => {
+        const year = row['年度'];
+        const quarter = row['季別'];
+        const epsRaw = row['基本每股盈餘（元）'];
+        
+        if (!epsRaw || epsRaw === '') return;
+        
+        const eps = parseFloat(String(epsRaw).replace(/,/g, ''));
+        if (isNaN(eps)) return;
+
+        // 季別 "0" 代表年度，"1"~"4" 代表各季度
+        if (quarter && quarter !== '0') {
+            result.eps.quarters[`Q${quarter}`] = eps;
+        } else if (quarter === '0') {
+            result.eps.year = eps;
+        }
+    });
+
+    // === 解析 ROE (計算：淨利 / 股東權益) ===
+    incomeData.forEach(incomeRow => {
+        const year = incomeRow['年度'];
+        const quarter = incomeRow['季別'];
+        
+        // 優先使用「歸屬於母公司業主」的淨利
+        let netIncomeRaw = incomeRow['淨利（淨損）歸屬於母公司業主'] || 
+                          incomeRow['本期淨利（淨損）'];
+        
+        if (!netIncomeRaw || netIncomeRaw === '') return;
+        
+        const netIncome = parseFloat(String(netIncomeRaw).replace(/,/g, ''));
+        if (isNaN(netIncome)) return;
+
+        // 找到對應期間的股東權益
+        const balanceRow = balanceData.find(b => 
+            b['年度'] === year && b['季別'] === quarter
+        );
+
+        if (balanceRow) {
+            let equityRaw = balanceRow['權益總額'] || 
+                           balanceRow['歸屬於母公司業主之權益合計'];
+            
+            if (!equityRaw || equityRaw === '') return;
+            
+            const equity = parseFloat(String(equityRaw).replace(/,/g, ''));
+
+            if (!isNaN(equity) && equity !== 0) {
+                const roe = (netIncome / equity) * 100;
+
+                if (quarter && quarter !== '0') {
+                    result.roe.quarters[`Q${quarter}`] = parseFloat(roe.toFixed(2));
+                } else if (quarter === '0') {
+                    result.roe.year = parseFloat(roe.toFixed(2));
+                }
+            }
+        }
+    });
+
+    // === 解析毛利率（直接從 t187ap17_L 取得）===
+    ratioData.forEach(row => {
+        const year = row['年度'];
+        const quarter = row['季別'];
+        const marginRaw = row['毛利率(%)(營業毛利)/(營業收入)'];
+        
+        if (!marginRaw || marginRaw === '') return;
+        
+        const margin = parseFloat(String(marginRaw).replace(/,/g, ''));
+        if (isNaN(margin)) return;
+
+        if (quarter && quarter !== '0') {
+            result.profitMargin.quarters[`Q${quarter}`] = margin;
+        } else if (quarter === '0') {
+            result.profitMargin.year = margin;
+        }
+    });
+
+    // 如果 t187ap17_L 沒有毛利率，從損益表計算
+    if (Object.keys(result.profitMargin.quarters).length === 0 && !result.profitMargin.year) {
+        incomeData.forEach(row => {
+            const year = row['年度'];
+            const quarter = row['季別'];
+            
+            const revenueRaw = row['營業收入'];
+            const grossProfitRaw = row['營業毛利（毛損）淨額'] || row['營業毛利（毛損）'];
+            
+            if (!revenueRaw || !grossProfitRaw) return;
+            
+            const revenue = parseFloat(String(revenueRaw).replace(/,/g, ''));
+            const grossProfit = parseFloat(String(grossProfitRaw).replace(/,/g, ''));
+            
+            if (isNaN(revenue) || isNaN(grossProfit) || revenue === 0) return;
+            
+            const margin = (grossProfit / revenue) * 100;
+
+            if (quarter && quarter !== '0') {
+                result.profitMargin.quarters[`Q${quarter}`] = parseFloat(margin.toFixed(2));
+            } else if (quarter === '0') {
+                result.profitMargin.year = parseFloat(margin.toFixed(2));
+            }
+        });
     }
-    const parsed = parseFloat(String(value).replace(/,/g, ''));
-    return isNaN(parsed) ? NaN : parsed;
+
+    // === 解析營收成長率 ===
+    if (revenueData.length > 0) {
+        // 月營收增率 - 直接從 API 取得
+        revenueData.forEach(row => {
+            const yearMonth = row['資料年月']; // 格式: "202411" (YYYYMM，民國年)
+            const monthGrowthRaw = row['營業收入-去年同月增減(%)'];
+            
+            if (!yearMonth || !monthGrowthRaw || monthGrowthRaw === '') return;
+            
+            const monthGrowth = parseFloat(String(monthGrowthRaw).replace(/,/g, ''));
+            if (!isNaN(monthGrowth)) {
+                result.revenueGrowth.months[yearMonth] = monthGrowth;
+            }
+        });
+
+        // 年營收增率 - 使用「累計營收增減率」
+        const sortedRevenue = [...revenueData].sort((a, b) => 
+            (b['資料年月'] || '').localeCompare(a['資料年月'] || '')
+        );
+        
+        if (sortedRevenue.length > 0) {
+            const latestYearGrowthRaw = sortedRevenue[0]['累計營業收入-前期比較增減(%)'];
+            if (latestYearGrowthRaw && latestYearGrowthRaw !== '') {
+                const latestYearGrowth = parseFloat(String(latestYearGrowthRaw).replace(/,/g, ''));
+                if (!isNaN(latestYearGrowth)) {
+                    result.revenueGrowth.year = latestYearGrowth;
+                }
+            }
+        }
+
+        // 計算季營收成長率
+        result.revenueGrowth.quarters = calculateQuarterlyGrowth(revenueData);
+    }
+
+    return result;
+}
+
+// === 計算季度營收成長率 ===
+function calculateQuarterlyGrowth(revenueData) {
+    const quarters = {};
+    const byYear = {};
+
+    // 按年月分組（注意：資料年月是民國年格式，如 "11411" = 民國114年11月）
+    revenueData.forEach(row => {
+        const ym = row['資料年月'];
+        if (!ym || ym.length < 5) return;
+
+        // 民國年格式：前3碼是年份，後2碼是月份
+        const rocYear = ym.substring(0, 3); // 民國年：如 "114"
+        const month = parseInt(ym.substring(3, 5)); // 月份：如 "11"
+        const westYear = (parseInt(rocYear) + 1911).toString(); // 轉西元年：114 + 1911 = 2025
+        
+        const revenueRaw = row['營業收入-當月營收'];
+        
+        if (!revenueRaw || revenueRaw === '') return;
+        
+        const revenue = parseFloat(String(revenueRaw).replace(/,/g, ''));
+        if (isNaN(revenue)) return;
+
+        if (!byYear[westYear]) byYear[westYear] = {};
+        byYear[westYear][month] = revenue;
+    });
+
+    // 計算各季度總營收
+    const quarterRevenues = {};
+    const years = Object.keys(byYear).sort();
+
+    years.forEach(year => {
+        const months = byYear[year];
+        quarterRevenues[`${year}Q1`] = (months[1] || 0) + (months[2] || 0) + (months[3] || 0);
+        quarterRevenues[`${year}Q2`] = (months[4] || 0) + (months[5] || 0) + (months[6] || 0);
+        quarterRevenues[`${year}Q3`] = (months[7] || 0) + (months[8] || 0) + (months[9] || 0);
+        quarterRevenues[`${year}Q4`] = (months[10] || 0) + (months[11] || 0) + (months[12] || 0);
+    });
+
+    // 計算年增率
+    const growthRates = {};
+    years.forEach((year, idx) => {
+        if (idx === 0) return;
+        const prevYear = years[idx - 1];
+
+        ['Q1', 'Q2', 'Q3', 'Q4'].forEach(q => {
+            const current = quarterRevenues[`${year}${q}`];
+            const previous = quarterRevenues[`${prevYear}${q}`];
+
+            if (current && previous && previous !== 0) {
+                const growth = ((current - previous) / previous) * 100;
+                growthRates[q] = parseFloat(growth.toFixed(2));
+            }
+        });
+    });
+
+    return growthRates;
 }
