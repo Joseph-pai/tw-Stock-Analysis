@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>證交所 API 格式測試工具</title>
+    <style>
+        body {
+            font-family: 'Microsoft JhengHei', Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .endpoint {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+        }
+        .endpoint h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .result {
+            background: #1e1e1e;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .success { color: #28a745; font-weight: bold; }
+        .error { color: #dc3545; font-weight: bold; }
+        .warning { color: #ffc107; font-weight: bold; }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+            color: #667eea;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-card h4 {
+            margin: 0 0 10px 0;
+            color: #667eea;
+            font-size: 14px;
+        }
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        .field-list {
+            columns: 2;
+            column-gap: 20px;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+        .note {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .category-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        .category-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .category-btn:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+        .category-btn.active {
+            background: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 證交所 API 格式測試工具</h1>
+        
+        <div class="note">
+            <strong>📍 Base URL:</strong> <code>https://openapi.twse.com.tw/v1</code><br>
+            <strong>📝 說明:</strong> 直接測試 TWSE 官方 OpenAPI，無需代理伺服器
+        </div>
+
+        <div class="category-buttons">
+            <button class="category-btn active" onclick="filterEndpoints('all')">全部 API</button>
+            <button class="category-btn" onclick="filterEndpoints('financial')">財務報表</button>
+            <button class="category-btn" onclick="filterEndpoints('trading')">證券交易</button>
+            <button class="category-btn" onclick="filterEndpoints('governance')">公司治理</button>
+            <button class="category-btn" onclick="filterEndpoints('indices')">指數資訊</button>
+        </div>
+
+        <div style="text-align: center; margin-bottom: 30px;">
+            <button onclick="runAllTests()" id="testBtn">開始測試所有 API</button>
+            <button onclick="testSelectedCategory()" id="categoryBtn" style="background: #28a745;">測試當前分類</button>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            ⏳ 正在測試 API，請稍候...
+        </div>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // TWSE 官方 API 端點 - 根據 PDF 文件
+        const endpoints = [
+            {
+                name: '上市公司每月營業收入彙總表',
+                path: '/opendata/t187ap05_L',
+                category: 'financial',
+                usage: '用於: 月營收、月營收增率、年營收增率',
+                searchKey: '2330',
+                description: '獲取上市公司每月營業收入數據'
+            },
+            {
+                name: '上市公司綜合損益表(一般業)',
+                path: '/opendata/t187ap06_L_ci',
+                category: 'financial',
+                usage: '用於: 年度/季度 EPS, 毛利率, 淨利',
+                searchKey: '2330',
+                description: '獲取上市公司綜合損益表數據'
+            },
+            {
+                name: '上市公司資產負債表(一般業)',
+                path: '/opendata/t187ap07_L_ci',
+                category: 'financial',
+                usage: '用於: 股東權益，計算 ROE',
+                searchKey: '2330',
+                description: '獲取上市公司資產負債表數據'
+            },
+            {
+                name: '上市公司各產業EPS統計資訊',
+                path: '/opendata/t187ap14_L',
+                category: 'financial',
+                usage: '用於: EPS 統計數據',
+                searchKey: '2330',
+                description: '獲取各產業EPS統計資訊'
+            },
+            {
+                name: '上市公司營益分析查詢彙總表',
+                path: '/opendata/t187ap17_L',
+                category: 'financial',
+                usage: '用於: 毛利率、營業利潤率等',
+                searchKey: '2330',
+                description: '獲取營益分析數據'
+            },
+            {
+                name: '上市個股日本益比、殖利率及股價淨值比',
+                path: '/exchangeReport/BMTBBU_ALL',
+                category: 'trading',
+                usage: '用於: 本益比、殖利率、股價淨值比',
+                searchKey: '2330',
+                description: '獲取個股評價指標'
+            },
+            {
+                name: '上市個股日成交資訊',
+                path: '/exchangeReport/STOCK_DAY_ALL',
+                category: 'trading',
+                usage: '用於: 每日成交價量',
+                searchKey: '2330',
+                description: '獲取個股每日成交資訊'
+            },
+            {
+                name: '上市個股月成交資訊',
+                path: '/exchangeReport/FMSRFK_ALL',
+                category: 'trading',
+                usage: '用於: 每月成交統計',
+                searchKey: '2330',
+                description: '獲取個股每月成交資訊'
+            },
+            {
+                name: '每日收盤行情-大盤統計資訊',
+                path: '/exchangeReport/WL_INDEX',
+                category: 'trading',
+                usage: '用於: 大盤統計數據',
+                searchKey: '',
+                description: '獲取大盤統計資訊'
+            },
+            {
+                name: '集中市場外資及陸資持股前20名',
+                path: '/fund/WL_0FIIS_sort_20',
+                category: 'trading',
+                usage: '用於: 外資持股排名',
+                searchKey: '2330',
+                description: '獲取外資持股前20名'
+            },
+            {
+                name: '上市公司基本資料',
+                path: '/opendata/t187ap03_L',
+                category: 'governance',
+                usage: '用於: 公司基本資訊',
+                searchKey: '2330',
+                description: '獲取上市公司基本資料'
+            },
+            {
+                name: '上市公司股利分派情形',
+                path: '/opendata/t187ap45_L',
+                category: 'governance',
+                usage: '用於: 股利分派資訊',
+                searchKey: '2330',
+                description: '獲取股利分派數據'
+            },
+            {
+                name: '上市公司董事酬金相關資訊',
+                path: '/opendata/t187ap29_A_L',
+                category: 'governance',
+                usage: '用於: 董事酬金查詢',
+                searchKey: '2330',
+                description: '獲取董事酬金資訊'
+            },
+            {
+                name: '上市公司每日重大訊息',
+                path: '/opendata/t187ap04_L',
+                category: 'governance',
+                usage: '用於: 重大訊息公告',
+                searchKey: '2330',
+                description: '獲取重大訊息資料'
+            },
+            {
+                name: '發行量加權股價指數歷史資料',
+                path: '/indicesReport/MI_5MINS_HIST',
+                category: 'indices',
+                usage: '用於: 加權指數歷史',
+                searchKey: '',
+                description: '獲取加權指數歷史資料'
+            },
+            {
+                name: '臺灣50指數歷史資料',
+                path: '/indicesReport/TAI501',
+                category: 'indices',
+                usage: '用於: 台灣50指數',
+                searchKey: '',
+                description: '獲取台灣50指數歷史資料'
+            },
+            {
+                name: '寶島股價指數歷史資料',
+                path: '/indicesReport/FRMSA',
+                category: 'indices',
+                usage: '用於: 寶島股價指數',
+                searchKey: '',
+                description: '獲取寶島股價指數歷史資料'
+            }
+        ];
+
+        let currentCategory = 'all';
+
+        function filterEndpoints(category) {
+            currentCategory = category;
+            
+            // 更新按鈕狀態
+            document.querySelectorAll('.category-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // 這裡可以添加過濾顯示邏輯，如果需要的話
+            console.log(`切換到分類: ${category}`);
+        }
+
+        async function runAllTests() {
+            const btn = document.getElementById('testBtn');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            
+            btn.disabled = true;
+            loading.style.display = 'block';
+            results.innerHTML = '';
+
+            const endpointsToTest = endpoints;
+
+            for (const endpoint of endpointsToTest) {
+                await testEndpoint(endpoint);
+                // 添加延遲避免過度頻繁請求
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            loading.style.display = 'none';
+            btn.disabled = false;
+        }
+
+        async function testSelectedCategory() {
+            const btn = document.getElementById('categoryBtn');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            
+            btn.disabled = true;
+            loading.style.display = 'block';
+            results.innerHTML = '';
+
+            const endpointsToTest = currentCategory === 'all' 
+                ? endpoints 
+                : endpoints.filter(ep => ep.category === currentCategory);
+
+            for (const endpoint of endpointsToTest) {
+                await testEndpoint(endpoint);
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            loading.style.display = 'none';
+            btn.disabled = false;
+        }
+
+        async function testEndpoint(endpoint) {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'endpoint';
+            
+            const apiUrl = `https://openapi.twse.com.tw/v1${endpoint.path}`;
+            
+            let html = `
+                <h3>${endpoint.name}</h3>
+                <div class="info">
+                    <strong>📍 API 端點:</strong> ${endpoint.path}<br>
+                    <strong>📝 用途:</strong> ${endpoint.usage}<br>
+                    <strong>🔗 完整 URL:</strong> <code>${apiUrl}</code>
+                </div>
+            `;
+
+            try {
+                console.log(`測試: ${endpoint.name} - ${apiUrl}`);
+                
+                const response = await fetch(apiUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                });
+                
+                if (!response.ok) {
+                    html += `<p class="error">❌ HTTP 錯誤: ${response.status} ${response.statusText}</p>`;
+                    resultDiv.innerHTML = html;
+                    document.getElementById('results').appendChild(resultDiv);
+                    return;
+                }
+
+                const data = await response.json();
+
+                // 檢查數據格式
+                const totalRows = Array.isArray(data) ? data.length : 1;
+                
+                if (totalRows === 0) {
+                    html += `<p class="warning">⚠️ 無數據返回</p>`;
+                    resultDiv.innerHTML = html;
+                    document.getElementById('results').appendChild(resultDiv);
+                    return;
+                }
+
+                const firstRow = Array.isArray(data) ? data[0] : data;
+                const isObject = typeof firstRow === 'object' && !Array.isArray(firstRow);
+                const isArray = Array.isArray(data);
+
+                html += `
+                    <div class="stats">
+                        <div class="stat-card">
+                            <h4>資料格式</h4>
+                            <div class="value">${isObject ? '物件 ✅' : isArray ? '陣列 ✅' : '未知'}</div>
+                        </div>
+                        <div class="stat-card">
+                            <h4>總筆數</h4>
+                            <div class="value">${totalRows}</div>
+                        </div>
+                        <div class="stat-card">
+                            <h4>欄位數量</h4>
+                            <div class="value">${isObject ? Object.keys(firstRow).length : isArray ? (firstRow ? firstRow.length : 0) : '?'}</div>
+                        </div>
+                    </div>
+                `;
+
+                if (isObject) {
+                    const fields = Object.keys(firstRow);
+                    html += `
+                        <p class="success">✅ 格式: 物件 (可用欄位名稱存取)</p>
+                        <details open>
+                            <summary><strong>📋 可用欄位 (${fields.length} 個):</strong></summary>
+                            <div class="field-list">
+                                ${fields.map(f => `• <code>${f}</code>`).join('<br>')}
+                            </div>
+                        </details>
+                    `;
+
+                    // 搜尋範例股票
+                    let sample = null;
+                    if (Array.isArray(data)) {
+                        sample = data.find(row => 
+                            row['公司代號'] === endpoint.searchKey || 
+                            row['公司代碼'] === endpoint.searchKey ||
+                            row['Code'] === endpoint.searchKey ||
+                            (typeof row === 'object' && Object.values(row).includes(endpoint.searchKey))
+                        );
+                    }
+
+                    if (sample) {
+                        // 高亮關鍵欄位
+                        const keyFields = ['公司代號', '公司代碼', 'Code', 'stock_id', '資料年月', '營業收入', 'EPS', 'ROE', '營業毛利率', '基本每股盈餘'];
+                        const highlightedSample = {};
+                        
+                        Object.keys(sample).forEach(key => {
+                            if (keyFields.some(kf => key.includes(kf))) {
+                                highlightedSample[`⭐ ${key}`] = sample[key];
+                            } else {
+                                highlightedSample[key] = sample[key];
+                            }
+                        });
+
+                        html += `
+                            <details open>
+                                <summary><strong>🎯 範例數據 (股票代碼: ${endpoint.searchKey}) - 關鍵欄位已標記 ⭐</strong></summary>
+                                <div class="result">${JSON.stringify(highlightedSample, null, 2)}</div>
+                            </details>
+                        `;
+                    } else if (Array.isArray(data) && data.length > 0) {
+                        // 顯示前幾筆的公司代號
+                        const companyCodes = data.slice(0, 5).map(row => {
+                            if (typeof row === 'object') {
+                                return row['公司代號'] || row['公司代碼'] || row['Code'] || '未知';
+                            }
+                            return '陣列格式';
+                        }).filter(code => code !== '未知');
+                        
+                        if (companyCodes.length > 0) {
+                            html += `<p class="warning">⚠️ 未找到股票代碼 ${endpoint.searchKey}，前5筆的公司代號: ${companyCodes.join(', ')}</p>`;
+                        }
+                        
+                        html += `
+                            <details open>
+                                <summary><strong>📊 第一筆數據:</strong></summary>
+                                <div class="result">${JSON.stringify(data[0], null, 2)}</div>
+                            </details>
+                        `;
+                    }
+
+                } else if (isArray) {
+                    html += `
+                        <p class="success">✅ 格式: 陣列</p>
+                        <p><strong>📊 第一筆數據 (用於判斷欄位順序):</strong></p>
+                        <div class="result">${JSON.stringify(firstRow, null, 2)}</div>
+                    `;
+
+                    if (endpoint.searchKey) {
+                        const sampleIdx = data.findIndex(row => 
+                            (Array.isArray(row) && row[0] === endpoint.searchKey) ||
+                            (typeof row === 'object' && row.公司代碼 === endpoint.searchKey)
+                        );
+                        
+                        if (sampleIdx >= 0) {
+                            html += `
+                                <p><strong>🎯 範例數據 (股票代碼: ${endpoint.searchKey}, 索引: ${sampleIdx}):</strong></p>
+                                <div class="result">${JSON.stringify(data[sampleIdx], null, 2)}</div>
+                            `;
+                        }
+                    }
+                }
+
+                html += `
+                    <details>
+                        <summary><strong>📄 前 3 筆原始數據:</strong></summary>
+                        <div class="result">${JSON.stringify(Array.isArray(data) ? data.slice(0, 3) : data, null, 2)}</div>
+                    </details>
+                `;
+
+            } catch (error) {
+                html += `<p class="error">❌ 錯誤: ${error.message}</p>`;
+                console.error('測試錯誤:', error);
+                
+                // 顯示更多錯誤資訊
+                if (error.message.includes('Failed to fetch')) {
+                    html += `<p class="warning">ℹ️ 這可能是 CORS 問題，建議部署到伺服器環境測試</p>`;
+                }
+            }
+
+            resultDiv.innerHTML = html;
+            document.getElementById('results').appendChild(resultDiv);
+        }
+
+        // 頁面載入時的提示
+        window.onload = function() {
+            console.log('%c🔍 證交所 API 測試工具已就緒', 'color: #667eea; font-size: 16px; font-weight: bold;');
+            console.log('Base URL: https://openapi.twse.com.tw/v1');
+            console.log('總共載入', endpoints.length, '個 API 端點');
+            
+            // 檢查 CORS 支援
+            testCORSSupport();
+        };
+
+        // 測試 CORS 支援
+        async function testCORSSupport() {
+            try {
+                const testUrl = 'https://openapi.twse.com.tw/v1/opendata/t187ap05_L';
+                const response = await fetch(testUrl, { method: 'HEAD' });
+                console.log('CORS 測試:', response.ok ? '✅ 可能支援' : '❌ 可能不支援');
+            } catch (error) {
+                console.log('CORS 測試: ❌ 不支援 -', error.message);
+                const note = document.querySelector('.note');
+                note.innerHTML += `<br><strong>⚠️ CORS 警告:</strong> 直接從瀏覽器訪問可能受限，建議部署到伺服器環境`;
+                note.style.background = '#fff3cd';
+            }
+        }
+    </script>
+</body>
+</html>
