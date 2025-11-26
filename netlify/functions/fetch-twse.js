@@ -77,6 +77,7 @@ async function getStructuredFinancials(stockId, headers) {
         console.log(`開始獲取股票 ${stockId} 的結構化財務數據`);
 
         // 1. 並行抓取所有需要的數據源
+        // [FIX]: 為所有 r.json() 增加 .catch(() => []) 以防止 HTML 404 錯誤導致崩潰
         const [incomeRes, balanceRes, revenueRes, ratioRes] = await Promise.all([
             // 綜合損益表
             Promise.all([
@@ -84,7 +85,7 @@ async function getStructuredFinancials(stockId, headers) {
                 fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_fh'),
                 fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd'),
                 fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins')
-            ]).then(responses => Promise.all(responses.map(r => r.ok ? r.json() : []))),
+            ]).then(responses => Promise.all(responses.map(r => r.ok ? r.json().catch(() => []) : []))),
             
             // 資產負債表
             Promise.all([
@@ -92,18 +93,18 @@ async function getStructuredFinancials(stockId, headers) {
                 fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_fh'),
                 fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_bd'),
                 fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_ins')
-            ]).then(responses => Promise.all(responses.map(r => r.ok ? r.json() : []))),
+            ]).then(responses => Promise.all(responses.map(r => r.ok ? r.json().catch(() => []) : []))),
             
             // 月營收
             fetch('https://openapi.twse.com.tw/v1/opendata/t187ap05_L')
-                .then(r => r.ok ? r.json() : [])
+                .then(r => r.ok ? r.json().catch(() => []) : [])
                 .catch(() => []),
             
-            // 財務比率
+            // 財務比率 (這部分是導致錯誤的主因)
             Promise.all([
                 fetch('https://openapi.twse.com.tw/v1/opendata/t187ap17_L'),
                 fetch('https://openapi.twse.com.tw/v1/opendata/t187ap46_L')
-            ]).then(responses => Promise.all(responses.map(r => r.ok ? r.json() : [])))
+            ]).then(responses => Promise.all(responses.map(r => r.ok ? r.json().catch(() => []) : [])))
         ]);
 
         // 2. 合併並過濾該股票的數據
