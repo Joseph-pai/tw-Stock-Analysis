@@ -1,8 +1,10 @@
+[file name]: index.html
+[file content begin]
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v20)</title>
+    <title>台灣股市終極專業分析器 - Joseph PAI 2025 (Final Fix v19)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -30,20 +32,25 @@
         .financial-period { background-color: rgba(255, 255, 255, 0.1); padding: 10px; border-radius: 5px; margin-bottom: 10px; }
         .basis-box { background: rgba(0,0,0,0.3); border-left: 4px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 4px; }
         td, th { vertical-align: middle; }
+        .metric-explanation { background: rgba(255,255,255,0.9); color: #333; padding: 15px; border-radius: 8px; margin-top: 15px; }
+        .metric-explanation h6 { color: #8B0000; font-weight: bold; margin-bottom: 10px; }
+        .metric-item { margin-bottom: 8px; font-size: 0.85rem; }
     </style>
 </head>
 <body>
 <div class="container py-5">
 
     <h1 class="text-center mb-2">台灣股市終極專業分析器</h1>
-    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/26 專業評分詳解版 • Netlify Functions + 結構化數據</p>
+    <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/22 專業評分詳解版 • Netlify Functions</p>
 
     <div class="row justify-content-center mb-4">
         <div class="col-md-8">
-            <div class="input-group">
-                <span class="input-group-text">FinMind Token（選填）</span>
-                <input type="text" id="tokenInput" class="form-control bg-white text-dark" placeholder="貼上 Token 或留空使用公開資料">
-                <button class="btn btn-warning fw-bold" id="saveToken">儲存</button>
+            <div class="mb-2">
+                <label class="form-label text-white-50">FinMind Token（選填）</label>
+                <div class="input-group">
+                    <input type="text" id="tokenInput" class="form-control bg-white text-dark" placeholder="貼上 Token 或留空使用公開資料">
+                    <button class="btn btn-warning fw-bold" id="saveToken">儲存</button>
+                </div>
             </div>
             <small class="text-white-50">免費註冊 → <a href="https://finmindtrade.com/analysis/#/account/register" target="_blank" class="text-warning">FinMind（30秒）</a> ｜ 或直接使用證交所+觀測站公開資料</small>
             <div id="tokenStatus" class="token-status mt-2"></div>
@@ -124,9 +131,7 @@
 
     <div id="result" style="display:none;"></div>
 
-</div>
-
-<footer>© 2025 Joseph PAI. All Rights Reserved. | 資料來源：台灣證券交易所 + FinMind + Yahoo Finance</footer>
+</div> <footer>© 2025 Joseph PAI. All Rights Reserved. | 資料來源：台灣證券交易所 + FinMind + Yahoo Finance</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
@@ -136,12 +141,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let TOKEN = '';
     try { TOKEN = localStorage.getItem('joseph_pai_token_2025') || ''; } catch(e) {}
 
-    // 財務數據緩存 - 結構化格式
+    // 財務數據緩存
     let financialCache = {
-        eps: { quarters: {}, year: null },
-        roe: { quarters: {}, year: null },
-        revenueGrowth: { months: {}, quarters: {}, year: null },
-        profitMargin: { quarters: {}, year: null }
+        eps: { quarter: 'N/A', year: 'N/A' },
+        roe: { quarter: 'N/A', year: 'N/A' },
+        revenueGrowth: { month: 'N/A', quarter: 'N/A', year: 'N/A' },
+        profitMargin: { quarter: 'N/A', year: 'N/A' }
     };
 
     const twseIndustryMap = {
@@ -241,54 +246,120 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { return null; }
     }
 
-    async function fetchTWSEFinancials(stockId) {
+    async function fetchTWSEFinancials(stockId, period) {
         log(`證交所財報 請求中... (${stockId})`);
         
-        // 重置財務快取
         financialCache = {
-            eps: { quarters: {}, year: null },
-            roe: { quarters: {}, year: null },
-            revenueGrowth: { months: {}, quarters: {}, year: null },
-            profitMargin: { quarters: {}, year: null }
+            eps: { quarter: 'N/A', year: 'N/A' },
+            roe: { quarter: 'N/A', year: 'N/A' },
+            revenueGrowth: { month: 'N/A', quarter: 'N/A', year: 'N/A' },
+            profitMargin: { quarter: 'N/A', year: 'N/A' }
         };
-        
+
         try {
-            // 調用新的結構化 API
-            const response = await fetch(`/.netlify/functions/fetch-twse?type=financials&stock_id=${stockId}`);
-            
-            if (!response.ok) {
-                log(`證交所代理請求失敗: ${response.status}`);
+            const [reportRes, ratioRes, monthlyRes] = await Promise.all([
+                fetch(`/.netlify/functions/fetch-twse?type=quarterly`), 
+                fetch(`/.netlify/functions/fetch-twse?type=annual`),    
+                fetch(`/.netlify/functions/fetch-twse?type=monthly`)    
+            ]);
+
+            if (!reportRes.ok || !ratioRes.ok || !monthlyRes.ok) {
+                log(`證交所代理請求失敗`);
                 return null;
             }
+
+            const reportData = await reportRes.json();
+            const ratioData = await ratioRes.json(); 
+            const monthlyData = await monthlyRes.json(); 
+
+            const findStocks = (data) => data ? data.filter(item => (String(item.Code) === stockId || String(item.公司代號) === stockId)) : [];
             
-            const structuredData = await response.json();
-            
-            // 檢查是否有錯誤
-            if (structuredData.error) {
-                log(`證交所數據錯誤: ${structuredData.error}`);
+            const findValue = (obj, keywords) => {
+                if (!obj) return null;
+                const keys = Object.keys(obj);
+                for (const kw of keywords) {
+                    const match = keys.find(k => k.includes(kw));
+                    if (match) {
+                        const val = obj[match];
+                        if (val !== null && val !== undefined && val !== '' && !isNaN(parseFloat(String(val).replace(/,/g, '')))) {
+                            return val;
+                        }
+                    }
+                }
+                return null;
+            };
+
+            const stockReportList = findStocks(reportData);
+            const stockRatioList = findStocks(ratioData); 
+            const stockMonthly = findStocks(monthlyData)[0]; 
+
+            const findValueInList = (list, keywords) => {
+                for (const item of list) {
+                    const val = findValue(item, keywords);
+                    if (val) return val;
+                }
+                return null;
+            };
+
+            if (stockReportList.length > 0 || stockRatioList.length > 0 || stockMonthly) {
+                // EPS
+                financialCache.eps.year = findValueInList(stockReportList, ['基本每股盈餘', 'EPS', '每股盈餘']) || 'N/A';
+                financialCache.eps.quarter = financialCache.eps.year;
+
+                // ROE
+                financialCache.roe.year = findValueInList(stockRatioList, ['權益報酬率', 'ROE', '股東權益報酬率', '純益率']) || 'N/A';
+                financialCache.roe.quarter = financialCache.roe.year;
+
+                // 毛利率
+                financialCache.profitMargin.quarter = findValueInList(stockRatioList, ['毛利率', '營業毛利率']) || 'N/A';
+                financialCache.profitMargin.year = financialCache.profitMargin.quarter;
+                
+                // === 累計營收成長率 (手動計算 - t187ap05_L) ===
+                let calculatedGrowth = 'N/A';
+                
+                const currentCumRaw = findValueInList(stockReportList, ['累計營業收入-當月累計營收', '本期累計營業收入']);
+                const prevCumRaw = findValueInList(stockReportList, ['累計營業收入-去年累計營收', '累計營業收入-去年同期累計營收', '去年同期累計營業收入']);
+
+                if (currentCumRaw && prevCumRaw) {
+                    const current = parseFloat(String(currentCumRaw).replace(/,/g, ''));
+                    const previous = parseFloat(String(prevCumRaw).replace(/,/g, ''));
+                    
+                    if (!isNaN(current) && !isNaN(previous) && previous !== 0) {
+                        calculatedGrowth = (((current - previous) / previous) * 100).toFixed(2);
+                        log(`*** 累計營收(年)：使用 t187ap05_L 手動計算: ${calculatedGrowth}%`);
+                    }
+                } else if (stockMonthly) {
+                    const mCurr = findValue(stockMonthly, ['累計營業收入-當月累計營收', '當月累計營收']);
+                    const mPrev = findValue(stockMonthly, ['累計營業收入-去年累計營收', '去年累計營收']);
+                    if (mCurr && mPrev) {
+                        const current = parseFloat(String(mCurr).replace(/,/g, ''));
+                        const previous = parseFloat(String(mPrev).replace(/,/g, ''));
+                        if (!isNaN(current) && !isNaN(previous) && previous !== 0) {
+                            calculatedGrowth = (((current - previous) / previous) * 100).toFixed(2);
+                            log(`*** 累計營收(年)：使用月營收手動計算: ${calculatedGrowth}%`);
+                        }
+                    }
+                }
+                
+                financialCache.revenueGrowth.year = calculatedGrowth;
+
+                // 月營收與季營收 (短期數據)
+                if (stockMonthly) {
+                     financialCache.revenueGrowth.month = findValue(stockMonthly, ['營業收入-去年同月增減(%)', '去年同月增減', '增減百分比']) || 'N/A';
+                     financialCache.revenueGrowth.quarter = findValue(stockMonthly, ['營業收入-上月比較增減(%)', '上月比較增減']) || 'N/A';
+                } else {
+                     financialCache.revenueGrowth.month = 'N/A';
+                     financialCache.revenueGrowth.quarter = 'N/A';
+                }
+
+                log(`TWSE 數據更新: EPS=${financialCache.eps.year}, ROE=${financialCache.roe.year}, 累計營收成長=${financialCache.revenueGrowth.year}%`);
+                return { source: 'TWSE (Multi-period)', ...financialCache }; 
+            } else {
+                log(`TWSE 代理成功但未找到 ${stockId} 資料`);
                 return null;
             }
-            
-            // 直接將結構化數據賦值給 financialCache
-            financialCache = structuredData;
-            
-            log(`✅ TWSE 結構化數據載入成功`);
-            log(`📊 數據統計:`);
-            log(`  - EPS 季度: ${Object.keys(structuredData.eps?.quarters || {}).join(', ') || '無'}`);
-            log(`  - EPS 年度: ${structuredData.eps?.year || 'N/A'}`);
-            log(`  - ROE 季度: ${Object.keys(structuredData.roe?.quarters || {}).join(', ') || '無'}`);
-            log(`  - ROE 年度: ${structuredData.roe?.year || 'N/A'}`);
-            log(`  - 月營收筆數: ${Object.keys(structuredData.revenueGrowth?.months || {}).length}`);
-            log(`  - 季營收: ${Object.keys(structuredData.revenueGrowth?.quarters || {}).join(', ') || '無'}`);
-            log(`  - 年營收成長: ${structuredData.revenueGrowth?.year || 'N/A'}%`);
-            log(`  - 毛利率季度: ${Object.keys(structuredData.profitMargin?.quarters || {}).join(', ') || '無'}`);
-            log(`  - 毛利率年度: ${structuredData.profitMargin?.year || 'N/A'}%`);
-            
-            return { source: 'TWSE (Structured Multi-period)', ...structuredData };
-            
         } catch (err) {
             log(`證交所數據處理失敗: ${err.message}`);
-            console.error('詳細錯誤:', err);
             return null;
         }
     }
@@ -304,7 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (financialCache.revenueGrowth.year === 'N/A') {
                     financialCache.revenueGrowth.year = result.financialData?.revenueGrowth?.raw ? (result.financialData.revenueGrowth.raw * 100).toFixed(2) : 'N/A';
                 }
-                financialCache.profitMargin.quarters['Q1'] = result.financialData?.grossMargins?.raw ? result.financialData.grossMargins.raw * 100 : 'N/A';
+                financialCache.profitMargin.quarter = result.financialData?.grossMargins?.raw ? result.financialData.grossMargins.raw * 100 : 'N/A';
                 return { source: 'Yahoo Finance' };
             }
             return null;
@@ -336,8 +407,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         let category = item['產業別'] || '其他';
                         if (twseIndustryMap[category]) category = twseIndustryMap[category];
                         return {
-                            stock_id: item['公司代號'] || item.Code,
-                            stock_name: item['公司名稱'] || item['公司簡稱'] || item.Name,
+                            stock_id: item.Code || item['公司代號'],
+                            stock_name: item.Name || item['公司簡稱'] || item['公司名稱'],
                             industry_category: category
                         };
                     }).filter(s => s.stock_id && s.stock_name);
@@ -421,77 +492,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // ================= UI 更新與評分計算 =================
+    // ================= UI 更新與評分計算 (修正：維度切換邏輯) =================
 
     function updateFinancialUI() {
-        // 獲取指定類型和期間的數值
         const getVal = (sel, key) => {
             const el = document.querySelector(`.period-select[data-type="${sel}"]`);
-            if (!el) {
-                console.warn(`找不到期間選單: ${sel}`);
-                return 'N/A';
-            }
+            if (!el) return 0;
+            const period = el.value;
             
-            const period = el.value; // "季" / "月" / "年" / "年(累計)"
-            
-            // 根據期間從 financialCache 中取得對應數據
-            if (period === '年' || period === '年(累計)') {
-                const val = financialCache[key]?.year;
-                return (val === null || val === undefined || val === 'N/A') ? 'N/A' : val;
-                
-            } else if (period === '季') {
-                // 取最新季度數據
-                const quarters = financialCache[key]?.quarters || {};
-                const quarterKeys = Object.keys(quarters).sort().reverse(); // ['Q4', 'Q3', 'Q2', 'Q1']
-                
-                if (quarterKeys.length === 0) return 'N/A';
-                
-                const latestQuarter = quarterKeys[0];
-                const val = quarters[latestQuarter];
-                log(`${sel} 季度數據: 使用 ${latestQuarter} = ${val}`);
-                return (val === null || val === undefined) ? 'N/A' : val;
-                
-            } else if (period === '月') {
-                // 取最新月度數據
-                const months = financialCache[key]?.months || {};
-                const monthKeys = Object.keys(months).sort().reverse(); // ['202411', '202410', ...]
-                
-                if (monthKeys.length === 0) return 'N/A';
-                
-                const latestMonth = monthKeys[0];
-                const val = months[latestMonth];
-                log(`${sel} 月度數據: 使用 ${latestMonth} = ${val}`);
-                return (val === null || val === undefined) ? 'N/A' : val;
-            }
-            
-            return 'N/A';
+            let dataKey = 'year'; 
+            if (period === '季') dataKey = 'quarter';
+            if (period === '月') dataKey = 'month';
+            if (period === '年' || period === '年(累計)') dataKey = 'year';
+
+            const val = financialCache[key][dataKey];
+            return (val === 'N/A' || val === undefined) ? 'N/A' : parseFloat(val);
         };
 
-        // 更新 UI 顯示
         const setUI = (id, val, suffix) => {
             const displayEl = document.getElementById(id);
             const inputEl = document.getElementById(id.replace('display', 'manual'));
-            
-            let displayVal;
-            if (val === 'N/A') {
-                displayVal = 'N/A';
-            } else {
-                const numVal = parseFloat(val);
-                displayVal = isNaN(numVal) ? 'N/A' : `${numVal.toFixed(2)}${suffix}`;
-            }
-            
-            if (displayEl) {
-                displayEl.textContent = displayVal;
-            }
-            
-            // 不自動填入手動輸入框，保持用戶的輸入
-            // 只在輸入框為空時更新 placeholder
+            const displayVal = (val === 'N/A') ? 'N/A' : `${val.toFixed(2)}${suffix}`;
+            if (displayEl) displayEl.textContent = displayVal;
             if (inputEl && inputEl.value === '') {
-                inputEl.placeholder = displayVal !== 'N/A' ? displayVal : '手動輸入';
+                inputEl.value = ''; 
+                inputEl.placeholder = ''; 
             }
         };
 
-        // 更新各項數據顯示
         const eps = getVal('eps', 'eps');
         setUI('displayEps', eps, ' 元');
 
@@ -504,68 +532,38 @@ document.addEventListener('DOMContentLoaded', () => {
         const margin = getVal('margin', 'profitMargin');
         setUI('displayMargin', margin, '%');
 
-        // 更新評分
         calculateBasicScoreFromManualInput();
     }
-    
+
     function setupPeriodChangeListeners() {
         document.querySelectorAll('.period-select').forEach(select => {
-            select.addEventListener('change', () => {
-                log(`期間切換: ${select.dataset.type} → ${select.value}`);
-                updateFinancialUI();
-            });
+            select.addEventListener('change', updateFinancialUI);
         });
     }
     
     function setupManualInputListeners() {
         document.querySelectorAll('.manual-input').forEach(input => {
-            input.addEventListener('input', () => {
-                log(`手動輸入: ${input.id} = ${input.value}`);
-                calculateBasicScoreFromManualInput();
-            });
+            input.addEventListener('change', calculateBasicScoreFromManualInput);
         });
     }
 
     window.calculateBasicScoreFromManualInput = function() {
-        // 獲取數值（優先使用手動輸入，否則使用快取數據）
         const getNum = (id, sel, key) => {
-            // 1. 先檢查手動輸入
-            const manualInput = document.getElementById(id);
-            if (manualInput && manualInput.value !== '') {
-                const manualVal = parseFloat(manualInput.value);
-                if (!isNaN(manualVal)) {
-                    log(`${id}: 使用手動輸入值 ${manualVal}`);
-                    return manualVal;
-                }
-            }
+            const manualVal = parseFloat(document.getElementById(id)?.value);
+            if (!isNaN(manualVal)) return manualVal;
 
-            // 2. 從快取中獲取（根據期間選單）
             const el = document.querySelector(`.period-select[data-type="${sel}"]`);
             if (!el) return NaN;
-            
             const period = el.value;
-            let val;
+            let dataKey = 'year';
+            if (period === '季') dataKey = 'quarter';
+            if (period === '月') dataKey = 'month';
+            if (period === '年(累計)') dataKey = 'year';
             
-            if (period === '年' || period === '年(累計)') {
-                val = financialCache[key]?.year;
-            } else if (period === '季') {
-                const quarters = financialCache[key]?.quarters || {};
-                const quarterKeys = Object.keys(quarters).sort().reverse();
-                val = quarterKeys.length > 0 ? quarters[quarterKeys[0]] : null;
-            } else if (period === '月') {
-                const months = financialCache[key]?.months || {};
-                const monthKeys = Object.keys(months).sort().reverse();
-                val = monthKeys.length > 0 ? months[monthKeys[0]] : null;
-            }
-            
-            if (val === null || val === undefined || val === 'N/A') return NaN;
-            
-            const numVal = parseFloat(val);
-            log(`${id}: 使用快取值 ${numVal} (期間: ${period})`);
-            return numVal;
+            const cacheVal = financialCache[key][dataKey];
+            return (cacheVal === 'N/A' || cacheVal === undefined) ? NaN : parseFloat(cacheVal);
         };
 
-        // 獲取各項數值
         const epsInput = getNum('manualEps', 'eps', 'eps');
         const roeInput = getNum('manualRoe', 'roe', 'roe');
         const revenueGrowthInput = getNum('manualRevenueGrowth', 'revenue', 'revenueGrowth');
@@ -574,103 +572,47 @@ document.addEventListener('DOMContentLoaded', () => {
         let basicScore = 0;
         let reasons = [];
         
-        // === EPS 評分 ===
         if (!isNaN(epsInput)) {
-            if (epsInput >= 8) { 
-                basicScore += 30; 
-                reasons.push(`EPS ${epsInput.toFixed(2)} ≥ 8 (+30)`); 
-            } else if (epsInput >= 5) { 
-                basicScore += 25; 
-                reasons.push(`EPS ${epsInput.toFixed(2)} ≥ 5 (+25)`); 
-            } else if (epsInput >= 3) { 
-                basicScore += 18; 
-                reasons.push(`EPS ${epsInput.toFixed(2)} ≥ 3 (+18)`); 
-            } else if (epsInput >= 0) { 
-                basicScore += 5; 
-                reasons.push(`EPS ${epsInput.toFixed(2)} ≥ 0 (+5)`); 
-            } else { 
-                basicScore -= 15; 
-                reasons.push(`EPS ${epsInput.toFixed(2)} < 0 (-15)`); 
-            }
-        } else { 
-            reasons.push('EPS 無數據'); 
-        }
+            if (epsInput >= 8) { basicScore += 30; reasons.push(`EPS ${epsInput.toFixed(2)} ≥ 8 (+30)`); }
+            else if (epsInput >= 5) { basicScore += 25; reasons.push(`EPS ${epsInput.toFixed(2)} ≥ 5 (+25)`); }
+            else if (epsInput >= 3) { basicScore += 18; reasons.push(`EPS ${epsInput.toFixed(2)} ≥ 3 (+18)`); }
+            else if (epsInput >= 0) { basicScore += 5; reasons.push(`EPS ${epsInput.toFixed(2)} ≥ 0 (+5)`); }
+            else { basicScore -= 15; reasons.push(`EPS ${epsInput.toFixed(2)} < 0 (-15)`); }
+        } else { reasons.push('EPS 無數據'); }
 
-        // === ROE 評分 ===
         if (!isNaN(roeInput)) {
-            if (roeInput >= 15) { 
-                basicScore += 30; 
-                reasons.push(`ROE ${roeInput.toFixed(2)}% ≥ 15% (+30)`); 
-            } else if (roeInput >= 10) { 
-                basicScore += 20; 
-                reasons.push(`ROE ${roeInput.toFixed(2)}% ≥ 10% (+20)`); 
-            } else if (roeInput >= 5) { 
-                basicScore += 10; 
-                reasons.push(`ROE ${roeInput.toFixed(2)}% ≥ 5% (+10)`); 
-            } else if (roeInput > 0) { 
-                basicScore += 5; 
-                reasons.push(`ROE ${roeInput.toFixed(2)}% > 0% (+5)`); 
-            } else { 
-                basicScore -= 10; 
-                reasons.push(`ROE ${roeInput.toFixed(2)}% ≤ 0% (-10)`); 
-            }
-        } else { 
-            reasons.push('ROE 無數據'); 
-        }
+            if (roeInput >= 15) { basicScore += 30; reasons.push(`ROE ${roeInput.toFixed(2)}% ≥ 15% (+30)`); }
+            else if (roeInput >= 10) { basicScore += 20; reasons.push(`ROE ${roeInput.toFixed(2)}% ≥ 10% (+20)`); }
+            else if (roeInput >= 5) { basicScore += 10; reasons.push(`ROE ${roeInput.toFixed(2)}% ≥ 5% (+10)`); }
+            else if (roeInput > 0) { basicScore += 5; reasons.push(`ROE ${roeInput.toFixed(2)}% > 0% (+5)`); }
+            else { basicScore -= 10; reasons.push(`ROE ${roeInput.toFixed(2)}% ≤ 0% (-10)`); }
+        } else { reasons.push('ROE 無數據'); }
 
-        // === 營收增率評分 ===
         if (!isNaN(revenueGrowthInput)) {
-            if (revenueGrowthInput >= 30) { 
-                basicScore += 30; 
-                reasons.push(`營收增率 ${revenueGrowthInput.toFixed(2)}% ≥ 30% (+30)`); 
-            } else if (revenueGrowthInput >= 10) { 
-                basicScore += 20; 
-                reasons.push(`營收增率 ${revenueGrowthInput.toFixed(2)}% ≥ 10% (+20)`); 
-            } else if (revenueGrowthInput > 0) { 
-                basicScore += 10; 
-                reasons.push(`營收增率 ${revenueGrowthInput.toFixed(2)}% > 0% (+10)`); 
-            } else { 
-                basicScore -= 10; 
-                reasons.push(`營收增率 ${revenueGrowthInput.toFixed(2)}% ≤ 0% (-10)`); 
-            }
-        } else { 
-            reasons.push('營收增率 無數據'); 
-        }
+            if (revenueGrowthInput >= 30) { basicScore += 30; reasons.push(`營收增率 ${revenueGrowthInput.toFixed(2)}% ≥ 30% (+30)`); }
+            else if (revenueGrowthInput >= 10) { basicScore += 20; reasons.push(`營收增率 ${revenueGrowthInput.toFixed(2)}% ≥ 10% (+20)`); }
+            else if (revenueGrowthInput > 0) { basicScore += 10; reasons.push(`營收增率 ${revenueGrowthInput.toFixed(2)}% > 0% (+10)`); }
+            else { basicScore -= 10; reasons.push(`營收增率 ${revenueGrowthInput.toFixed(2)}% ≤ 0% (-10)`); }
+        } else { reasons.push('營收增率 無數據'); }
 
-        // === 毛利率評分 ===
         if (!isNaN(profitMarginInput)) {
-            if (profitMarginInput >= 50) { 
-                basicScore += 10; 
-                reasons.push(`毛利 ${profitMarginInput.toFixed(2)}% ≥ 50% (+10)`); 
-            } else if (profitMarginInput >= 20) { 
-                basicScore += 5; 
-                reasons.push(`毛利 ${profitMarginInput.toFixed(2)}% ≥ 20% (+5)`); 
-            } else { 
-                reasons.push(`毛利 ${profitMarginInput.toFixed(2)}% < 20% (0)`); 
-            }
-        } else { 
-            reasons.push('毛利 無數據'); 
-        }
+            if (profitMarginInput >= 50) { basicScore += 10; reasons.push(`毛利 ${profitMarginInput.toFixed(2)}% ≥ 50% (+10)`); }
+            else if (profitMarginInput >= 20) { basicScore += 5; reasons.push(`毛利 ${profitMarginInput.toFixed(2)}% ≥ 20% (+5)`); }
+            else { reasons.push(`毛利 ${profitMarginInput.toFixed(2)}% < 20% (0)`); }
+        } else { reasons.push('毛利 無數據'); }
         
-        // 計算最終得分（按權重調整）
         const weight = weights.basic || 35;
         const finalBasicScore = Math.max(-weight, Math.min(weight, Math.round(basicScore / 100 * weight)));
         
-        // 更新 UI
         const basicScoreEl = document.getElementById('score_basic');
         if (basicScoreEl) {
             basicScoreEl.textContent = `${finalBasicScore >= 0 ? '+' : ''}${finalBasicScore}`;
-            basicScoreEl.className = `badge ${finalBasicScore >= 0 ? 'badge-pos' : 'badge-neg'} fs-5`;
+            basicScoreEl.className = `badge ${finalBasicScore>=0?'badge-pos':'badge-neg'} fs-5`;
         }
         
         const descEl = document.querySelector('#scoreTable tbody tr:nth-child(1) td:nth-child(4)');
-        if (descEl) {
-            descEl.innerHTML = `<small>${reasons.join('<br>')}</small>`;
-        }
+        if (descEl) descEl.innerHTML = `<small>${reasons.join('<br>')}</small>`;
         
-        log(`基本面評分: ${finalBasicScore} (原始: ${basicScore}, 權重: ${weight}%)`);
-        
-        // 更新總分
         updateTotalScore();
     };
 
@@ -735,8 +677,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (finalEl) finalEl.innerHTML = `<h1 class="score-big ${color}">${final >= 0 ? '+' : ''}${final}%</h1>`;
     }
 
-    // ================= 主分析表單提交 =================
-    
     document.getElementById('analyzeForm').onsubmit = async e => {
         e.preventDefault();
         const symbol = document.getElementById('stockSelect').value.trim();
@@ -758,7 +698,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (stock) { name = stock.stock_name; industry = stock.industry_category; }
             }
 
-            // 1. 獲取股價數據
             let priceDataFinal = await fetchYahooWithProxy(`${symbol}.TW`, '股價');
             if (!priceDataFinal && !TOKEN) { 
                 const twsePrice = await fetchTWSEPrice(symbol);
@@ -768,21 +707,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (!priceDataFinal) throw new Error('無法取得股價資料，請稍後再試');
 
-            // 2. 獲取財務數據（使用新的結構化 API）
-            let financialData = await fetchTWSEFinancials(symbol);
+            let financialData = await fetchTWSEFinancials(symbol, '季');
             if (!financialData || financialCache.eps.year === 'N/A' || financialCache.revenueGrowth.year === 'N/A') {
-                 log('證交所數據不完整，嘗試 Yahoo Finance 備援...');
                  financialData = await fetchYahooFinanceFinancials(symbol);
             }
             
-            // 3. 獲取新聞數據
             let newsRaw = null;
             if (TOKEN) newsRaw = await fetchFinmind('TaiwanStockNews', symbol, startDate);
 
-            // 4. 獲取大盤數據
             let marketData = await fetchYahooWithProxy('%5ETWII', '大盤');
 
-            // 5. 處理股價數據
             const allTimestamps = priceDataFinal.chart.result[0].timestamp;
             const allCloses = priceDataFinal.chart.result[0].indicators.quote[0].close;
             const startTs = new Date(startDate).getTime() / 1000;
@@ -797,7 +731,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const price = closes.at(-1).toFixed(2);
             const risePercent = closes.length >= 2 ? ((closes.at(-1) - closes[0]) / closes[0] * 100).toFixed(2) : 0;
             
-            // 6. 計算技術面評分
             const techW = weights.technical || 25;
             let techScore = 0;
             let techReason = '區間震盪';
@@ -818,7 +751,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 techReason = `區間漲跌 ${risePercent}% (盤整不計分)`; 
             }
 
-            // 7. 計算市場面評分
             const marketW = weights.market || 20;
             let marketScore = 0; 
             let marketReason = '無資料';
@@ -841,7 +773,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // 8. 計算消息面評分
             const newsW = weights.news || 10;
             let newsScore = 0;
             let newsReason = '無新聞';
@@ -863,7 +794,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             
-            // 9. 計算風險面評分
             const riskW = weights.risk || 10;
             let riskScore = 0;
             let riskReason = '無重大風險'; 
@@ -888,7 +818,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const finSource = financialData?.source || '無';
             
-            // 10. 渲染結果 HTML
             document.getElementById('result').innerHTML = `
                 <div class="text-center mb-5">
                     <h2>${symbol} ${name} <small class="text-info">(${industry})</small></h2>
@@ -904,7 +833,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="card-header bg-primary text-white"><strong>最新財報數據</strong></div>
                             <div class="financial-period"><small class="text-muted">請使用下方選單切換分析維度</small></div>
                             <table class="table table-striped mb-0">
-                                <thead><tr><th>項目</th><th>期間</th><th>數值</th><th class="manual-label">輸入</th></tr></thead>
+                                <thead><tr><th>面向</th><th>期間</th><th>數值</th><th class="manual-label">輸入</th></tr></thead>
                                 <tbody>
                                     <tr>
                                         <td>EPS</td>
@@ -933,6 +862,22 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </tbody>
                             </table>
                             
+                            <div class="metric-explanation">
+                                <h6>📈 財務指標專業說明</h6>
+                                <div class="metric-item">
+                                    <strong>EPS (每股盈餘):</strong> 衡量公司為每股普通股賺取的利潤。≥8元為優秀，≥5元為良好，≥3元為及格，負值表示虧損。
+                                </div>
+                                <div class="metric-item">
+                                    <strong>ROE (股東權益報酬率):</strong> 衡量公司運用股東資本的效率。≥15%為優秀，≥10%為良好，≥5%為及格，負值表示資本運用效率差。
+                                </div>
+                                <div class="metric-item">
+                                    <strong>營收增率:</strong> 反映公司營收成長動能。≥30%為高速成長，≥10%為穩健成長，正增長為基本要求，負增長需警惕。
+                                </div>
+                                <div class="metric-item">
+                                    <strong>毛利率:</strong> 顯示公司產品或服務的定價能力與成本控制。≥50%為高毛利行業，≥20%為行業平均水平。
+                                </div>
+                            </div>
+
                             <div class="explanation mt-3">
                                 <h6>📊 專業評分項目說明</h6>
                                 <ul class="mb-0 small ps-3">
@@ -950,7 +895,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="card text-dark">
                             <div class="card-header bg-danger text-white table-header-red"><strong>專業評分</strong></div>
                             <table class="table table-striped mb-0" id="scoreTable">
-                                <thead><tr><th>項目</th><th>權重%</th><th>得分</th><th>說明</th></tr></thead>
+                                <thead><tr><th>面向</th><th>權重%</th><th>得分</th><th>說明</th></tr></thead>
                                 <tbody>
                                     <tr><td>基本面</td><td><input type="number" data-field="basic" class="form-control weight-input" value="${weights.basic}" onchange="adjustWeights('basic',+this.value)"></td><td><span class="badge badge-pos fs-5" id="score_basic">0</span></td><td>財報</td></tr>
                                     <tr><td>技術面</td><td><input type="number" data-field="technical" class="form-control weight-input" value="${weights.technical}" onchange="adjustWeights('technical',+this.value)"></td><td><span class="badge badge-pos fs-5" id="score_technical">${techScore}</span></td><td>${techReason}</td></tr>
@@ -968,12 +913,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
-            // 11. 設定監聽器並更新 UI
             setupPeriodChangeListeners();
             setupManualInputListeners();
-            updateFinancialUI();
+            updateFinancialUI(); 
 
-            // 12. 繪製圖表
             new Chart(document.getElementById('priceChart'), {
                 type: 'line',
                 data: {
@@ -996,9 +939,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('loading').style.display = 'none';
     };
 
-    // 啟動
     loadStockData();
+    document.addEventListener('DOMContentLoaded', () => {
+    setupPeriodChangeListeners();
+    setupManualInputListeners();
+    });
 });
 </script>
 </body>
 </html>
+[file content end]
