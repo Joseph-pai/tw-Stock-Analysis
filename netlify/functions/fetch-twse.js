@@ -104,19 +104,23 @@ async function getStructuredFinancials(stockId, headers) {
         ]);
 
         // 2. 合併並過濾該股票的數據
-        const allIncome = incomeRes.flat().filter(row => row['公司代號'] === stockId);
-        const allBalance = balanceRes.flat().filter(row => row['公司代號'] === stockId);
-        const allRevenue = Array.isArray(revenueRes) ? revenueRes.filter(row => 
-            row['公司代號'] === stockId
-        ) : [];
-        const allRatio = Array.isArray(ratioRes) ? ratioRes.filter(row => 
-            row['公司代號'] === stockId
-        ) : [];
+        const allIncome = incomeRes.flat().filter(row => row && row['公司代號'] === stockId);
+        const allBalance = balanceRes.flat().filter(row => row && row['公司代號'] === stockId);
+        const allRevenue = Array.isArray(revenueRes) ? revenueRes.filter(row => row && row['公司代號'] === stockId) : [];
+        const allRatio = Array.isArray(ratioRes) ? ratioRes.filter(row => row && row['公司代號'] === stockId) : [];
 
         console.log(`找到數據: 損益表 ${allIncome.length}, 資產負債表 ${allBalance.length}, 月營收 ${allRevenue.length}, 營益分析 ${allRatio.length}`);
 
         // 3. 解析並結構化數據
         const result = parseFinancialData(allIncome, allBalance, allRevenue, allRatio);
+
+        // 4. 添加原始數據到結果中，供前端人工計算使用
+        result.rawData = {
+            incomeStatements: allIncome,
+            balanceSheets: allBalance,
+            monthlyRevenues: allRevenue,
+            financialRatios: allRatio
+        };
 
         return {
             statusCode: 200,
@@ -263,6 +267,8 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
     // === 解析 EPS ===
     console.log('開始解析 EPS 數據...');
     incomeData.forEach((row, index) => {
+        if (!row) return;
+        
         const rocYear = row['年度'];
         const quarter = row['季別'];
         const epsRaw = row['基本每股盈餘（元）'];
@@ -313,6 +319,8 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
     // === 解析 ROE (計算：淨利 / 股東權益) ===
     console.log('開始解析 ROE 數據...');
     incomeData.forEach((incomeRow, index) => {
+        if (!incomeRow) return;
+        
         const rocYear = incomeRow['年度'];
         const quarter = incomeRow['季別'];
         
@@ -347,7 +355,7 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
 
         // 找到對應期間的股東權益
         const balanceRow = balanceData.find(b => 
-            b['年度'] === rocYear && b['季別'] === quarter
+            b && b['年度'] === rocYear && b['季別'] === quarter
         );
 
         if (!balanceRow) {
@@ -399,6 +407,8 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
     
     // 先從營益分析表獲取
     ratioData.forEach((row, index) => {
+        if (!row) return;
+        
         const rocYear = row['年度'];
         const quarter = row['季別'];
         const marginRaw = row['毛利率(%)(營業毛利)/(營業收入)'];
@@ -440,6 +450,8 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
         console.log('從營益分析表未找到毛利率，嘗試從損益表計算...');
         
         incomeData.forEach((row, index) => {
+            if (!row) return;
+            
             const rocYear = row['年度'];
             const quarter = row['季別'];
             
@@ -504,6 +516,8 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
     console.log('開始解析營收成長率數據...');
     if (revenueData.length > 0) {
         revenueData.forEach((row, index) => {
+            if (!row) return;
+            
             const rocYearMonth = row['資料年月'];
             const monthGrowthRaw = row['營業收入-上月比較增減(%)']; // 月增率
             const yearGrowthRaw = row['營業收入-去年同月增減(%)'];  // 年增率
@@ -598,6 +612,8 @@ function calculateQuarterlyGrowth(revenueData) {
 
     // 按年月分組（資料年月是民國年格式）
     revenueData.forEach((row, index) => {
+        if (!row) return;
+        
         const rocYearMonth = row['資料年月'];
         if (!rocYearMonth || rocYearMonth.length < 5) {
             console.log(`季度計算 ${index}: 跳過 - 無效年月: ${rocYearMonth}`);
