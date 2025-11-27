@@ -1,5 +1,3 @@
-[file name]: index.html
-[file content begin]
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -610,57 +608,88 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             const period = el.value;
+            console.log(`獲取 ${sel} 數據，期間: ${period}, 鍵: ${key}, 子鍵: ${subKey}`);
             
-            if (period === '年') {
-                const val = subKey ? financialCache[key]?.[subKey]?.year : financialCache[key]?.year;
-                return (val === null || val === undefined || val === 'N/A') ? 'N/A' : val;
+            try {
+                // 獲取對應的數據結構
+                let dataObj;
+                if (subKey) {
+                    dataObj = financialCache[key]?.[subKey];
+                } else {
+                    dataObj = financialCache[key];
+                }
                 
-            } else if (period === '季') {
-                const quarters = subKey ? financialCache[key]?.[subKey]?.quarters : financialCache[key]?.quarters;
-                const quarterKeys = Object.keys(quarters || {}).sort().reverse();
+                if (!dataObj) {
+                    console.log(`${sel} 數據結構不存在`);
+                    return 'N/A';
+                }
                 
-                if (quarterKeys.length === 0) return 'N/A';
-                
-                const latestQuarter = quarterKeys[0];
-                const val = quarters[latestQuarter];
-                log(`${sel} 季度數據: 使用 ${latestQuarter} = ${val}`);
-                return (val === null || val === undefined) ? 'N/A' : val;
-                
-            } else if (period === '月') {
-                if (sel === 'revenue') {
-                    // 營收增率：使用月增率數據
-                    const months = financialCache.revenueGrowth?.monthOverMonth || {};
-                    const monthKeys = Object.keys(months).sort().reverse();
+                if (period === '年') {
+                    const val = dataObj.year;
+                    console.log(`年度數據 ${sel}:`, val);
+                    return (val === null || val === undefined || val === 'N/A') ? 'N/A' : val;
                     
-                    if (monthKeys.length === 0) {
-                        // 備援：使用年增率數據
-                        const yearMonths = financialCache.revenueGrowth?.yearOverYear || {};
-                        const yearMonthKeys = Object.keys(yearMonths).sort().reverse();
-                        if (yearMonthKeys.length === 0) return 'N/A';
-                        const latestMonth = yearMonthKeys[0];
-                        const val = yearMonths[latestMonth];
-                        log(`${sel} 月度數據(年增率備援): 使用 ${latestMonth} = ${val}`);
-                        return (val === null || val === undefined) ? 'N/A' : val;
+                } else if (period === '季') {
+                    const quarters = dataObj.quarters || {};
+                    console.log(`季度數據 ${sel}:`, quarters);
+                    const quarterKeys = Object.keys(quarters).sort().reverse();
+                    
+                    if (quarterKeys.length === 0) {
+                        console.log(`無季度數據，嘗試使用年度數據`);
+                        const annualVal = dataObj.year;
+                        return (annualVal === null || annualVal === undefined || annualVal === 'N/A') ? 'N/A' : annualVal;
                     }
                     
-                    const latestMonth = monthKeys[0];
-                    const val = months[latestMonth];
-                    log(`${sel} 月度數據(月增率): 使用 ${latestMonth} = ${val}`);
+                    const latestQuarter = quarterKeys[0];
+                    const val = quarters[latestQuarter];
+                    console.log(`${sel} 使用季度 ${latestQuarter}:`, val);
                     return (val === null || val === undefined) ? 'N/A' : val;
-                } else {
-                    const months = financialCache[key]?.months || {};
-                    const monthKeys = Object.keys(months).sort().reverse();
                     
-                    if (monthKeys.length === 0) return 'N/A';
-                    
-                    const latestMonth = monthKeys[0];
-                    const val = months[latestMonth];
-                    log(`${sel} 月度數據: 使用 ${latestMonth} = ${val}`);
-                    return (val === null || val === undefined) ? 'N/A' : val;
+                } else if (period === '月') {
+                    if (sel === 'revenue') {
+                        // 營收增率：使用月增率數據
+                        const months = financialCache.revenueGrowth?.monthOverMonth || {};
+                        const monthKeys = Object.keys(months).sort().reverse();
+                        
+                        if (monthKeys.length === 0) {
+                            // 備援：使用年增率數據
+                            const yearMonths = financialCache.revenueGrowth?.yearOverYear || {};
+                            const yearMonthKeys = Object.keys(yearMonths).sort().reverse();
+                            if (yearMonthKeys.length === 0) {
+                                console.log(`${sel}: 無月增率和年增率數據`);
+                                return 'N/A';
+                            }
+                            const latestMonth = yearMonthKeys[0];
+                            const val = yearMonths[latestMonth];
+                            console.log(`${sel} 月度數據(年增率備援): 使用 ${latestMonth} = ${val}`);
+                            return (val === null || val === undefined) ? 'N/A' : val;
+                        }
+                        
+                        const latestMonth = monthKeys[0];
+                        const val = months[latestMonth];
+                        console.log(`${sel} 月度數據(月增率): 使用 ${latestMonth} = ${val}`);
+                        return (val === null || val === undefined) ? 'N/A' : val;
+                    } else {
+                        const months = dataObj.months || {};
+                        const monthKeys = Object.keys(months).sort().reverse();
+                        
+                        if (monthKeys.length === 0) {
+                            console.log(`${sel}: 無月度數據`);
+                            return 'N/A';
+                        }
+                        
+                        const latestMonth = monthKeys[0];
+                        const val = months[latestMonth];
+                        console.log(`${sel} 月度數據: 使用 ${latestMonth} = ${val}`);
+                        return (val === null || val === undefined) ? 'N/A' : val;
+                    }
                 }
+                
+                return 'N/A';
+            } catch (error) {
+                console.error(`獲取 ${sel} 數據錯誤:`, error);
+                return 'N/A';
             }
-            
-            return 'N/A';
         };
 
         const setUI = (id, val, suffix) => {
@@ -1188,4 +1217,3 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
-[file content end]
