@@ -1,3 +1,5 @@
+[file name]: index.html
+[file content begin]
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -140,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let financialCache = {
         eps: { quarters: {}, year: null },
         roe: { quarters: {}, year: null },
-        revenueGrowth: { months: {}, quarters: {}, year: null },
+        revenueGrowth: { months: {}, monthOverMonth: {}, quarters: {}, year: null },
         profitMargin: { quarters: {}, year: null }
     };
 
@@ -248,7 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
         financialCache = {
             eps: { quarters: {}, year: null },
             roe: { quarters: {}, year: null },
-            revenueGrowth: { months: {}, quarters: {}, year: null },
+            revenueGrowth: { months: {}, monthOverMonth: {}, quarters: {}, year: null },
             profitMargin: { quarters: {}, year: null }
         };
         
@@ -279,6 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
             log(`  - ROE 季度: ${Object.keys(structuredData.roe?.quarters || {}).join(', ') || '無'}`);
             log(`  - ROE 年度: ${structuredData.roe?.year || 'N/A'}`);
             log(`  - 月營收筆數: ${Object.keys(structuredData.revenueGrowth?.months || {}).length}`);
+            log(`  - 月增率筆數: ${Object.keys(structuredData.revenueGrowth?.monthOverMonth || {}).length}`);
             log(`  - 季營收: ${Object.keys(structuredData.revenueGrowth?.quarters || {}).join(', ') || '無'}`);
             log(`  - 年營收成長: ${structuredData.revenueGrowth?.year || 'N/A'}%`);
             log(`  - 毛利率季度: ${Object.keys(structuredData.profitMargin?.quarters || {}).join(', ') || '無'}`);
@@ -424,7 +427,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ================= UI 更新與評分計算 =================
 
     function updateFinancialUI() {
-        const getVal = (sel, key) => {
+        const getVal = (sel, key, subKey = null) => {
             const el = document.querySelector(`.period-select[data-type="${sel}"]`);
             if (!el) {
                 console.warn(`找不到期間選單: ${sel}`);
@@ -433,13 +436,13 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const period = el.value;
             
-            if (period === '年' || period === '年(累計)') {
-                const val = financialCache[key]?.year;
+            if (period === '年') {
+                const val = subKey ? financialCache[key]?.[subKey]?.year : financialCache[key]?.year;
                 return (val === null || val === undefined || val === 'N/A') ? 'N/A' : val;
                 
             } else if (period === '季') {
-                const quarters = financialCache[key]?.quarters || {};
-                const quarterKeys = Object.keys(quarters).sort().reverse();
+                const quarters = subKey ? financialCache[key]?.[subKey]?.quarters : financialCache[key]?.quarters;
+                const quarterKeys = Object.keys(quarters || {}).sort().reverse();
                 
                 if (quarterKeys.length === 0) return 'N/A';
                 
@@ -449,15 +452,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 return (val === null || val === undefined) ? 'N/A' : val;
                 
             } else if (period === '月') {
-                const months = financialCache[key]?.months || {};
-                const monthKeys = Object.keys(months).sort().reverse();
-                
-                if (monthKeys.length === 0) return 'N/A';
-                
-                const latestMonth = monthKeys[0];
-                const val = months[latestMonth];
-                log(`${sel} 月度數據: 使用 ${latestMonth} = ${val}`);
-                return (val === null || val === undefined) ? 'N/A' : val;
+                if (sel === 'revenue') {
+                    // 營收增率：使用月增率數據
+                    const months = financialCache.revenueGrowth?.monthOverMonth || {};
+                    const monthKeys = Object.keys(months).sort().reverse();
+                    
+                    if (monthKeys.length === 0) {
+                        // 備援：使用年增率數據
+                        const yearMonths = financialCache.revenueGrowth?.months || {};
+                        const yearMonthKeys = Object.keys(yearMonths).sort().reverse();
+                        if (yearMonthKeys.length === 0) return 'N/A';
+                        const latestMonth = yearMonthKeys[0];
+                        const val = yearMonths[latestMonth];
+                        log(`${sel} 月度數據(年增率備援): 使用 ${latestMonth} = ${val}`);
+                        return (val === null || val === undefined) ? 'N/A' : val;
+                    }
+                    
+                    const latestMonth = monthKeys[0];
+                    const val = months[latestMonth];
+                    log(`${sel} 月度數據(月增率): 使用 ${latestMonth} = ${val}`);
+                    return (val === null || val === undefined) ? 'N/A' : val;
+                } else {
+                    const months = financialCache[key]?.months || {};
+                    const monthKeys = Object.keys(months).sort().reverse();
+                    
+                    if (monthKeys.length === 0) return 'N/A';
+                    
+                    const latestMonth = monthKeys[0];
+                    const val = months[latestMonth];
+                    log(`${sel} 月度數據: 使用 ${latestMonth} = ${val}`);
+                    return (val === null || val === undefined) ? 'N/A' : val;
+                }
             }
             
             return 'N/A';
@@ -490,7 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const roe = getVal('roe', 'roe');
         setUI('displayRoe', roe, '%');
 
-        const rev = getVal('revenue', 'revenueGrowth');
+        const rev = getVal('revenue', 'revenueGrowth', 'revenueGrowth');
         setUI('displayRevenue', rev, '%');
 
         const margin = getVal('margin', 'profitMargin');
@@ -518,7 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.calculateBasicScoreFromManualInput = function() {
-        const getNum = (id, sel, key) => {
+        const getNum = (id, sel, key, subKey = null) => {
             const manualInput = document.getElementById(id);
             if (manualInput && manualInput.value !== '') {
                 const manualVal = parseFloat(manualInput.value);
@@ -534,16 +559,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const period = el.value;
             let val;
             
-            if (period === '年' || period === '年(累計)') {
-                val = financialCache[key]?.year;
+            if (period === '年') {
+                val = subKey ? financialCache[key]?.[subKey]?.year : financialCache[key]?.year;
             } else if (period === '季') {
-                const quarters = financialCache[key]?.quarters || {};
-                const quarterKeys = Object.keys(quarters).sort().reverse();
+                const quarters = subKey ? financialCache[key]?.[subKey]?.quarters : financialCache[key]?.quarters;
+                const quarterKeys = Object.keys(quarters || {}).sort().reverse();
                 val = quarterKeys.length > 0 ? quarters[quarterKeys[0]] : null;
             } else if (period === '月') {
-                const months = financialCache[key]?.months || {};
-                const monthKeys = Object.keys(months).sort().reverse();
-                val = monthKeys.length > 0 ? months[monthKeys[0]] : null;
+                if (sel === 'revenue') {
+                    const months = financialCache.revenueGrowth?.monthOverMonth || {};
+                    const monthKeys = Object.keys(months).sort().reverse();
+                    val = monthKeys.length > 0 ? months[monthKeys[0]] : null;
+                    if (val === null) {
+                        const yearMonths = financialCache.revenueGrowth?.months || {};
+                        const yearMonthKeys = Object.keys(yearMonths).sort().reverse();
+                        val = yearMonthKeys.length > 0 ? yearMonths[yearMonthKeys[0]] : null;
+                    }
+                } else {
+                    const months = financialCache[key]?.months || {};
+                    const monthKeys = Object.keys(months).sort().reverse();
+                    val = monthKeys.length > 0 ? months[monthKeys[0]] : null;
+                }
             }
             
             if (val === null || val === undefined || val === 'N/A') return NaN;
@@ -555,7 +591,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const epsInput = getNum('manualEps', 'eps', 'eps');
         const roeInput = getNum('manualRoe', 'roe', 'roe');
-        const revenueGrowthInput = getNum('manualRevenueGrowth', 'revenue', 'revenueGrowth');
+        const revenueGrowthInput = getNum('manualRevenueGrowth', 'revenue', 'revenueGrowth', 'revenueGrowth');
         const profitMarginInput = getNum('manualProfitMargin', 'margin', 'profitMargin');
         
         let basicScore = 0;
@@ -890,7 +926,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     </tr>
                                     <tr>
                                         <td>營收增率</td>
-                                        <td><select class="form-select period-select" data-type="revenue"><option value="月">月</option><option value="季">季</option><option value="年">年(累計)</option></select></td>
+                                        <td><select class="form-select period-select" data-type="revenue"><option value="月">月</option><option value="季">季</option></select></td>
                                         <td class="fs-5" id="displayRevenue">N/A</td>
                                         <td class="manual-input-cell"><input type="number" id="manualRevenueGrowth" class="form-control manual-input" step="0.1"></td>
                                     </tr>
@@ -968,4 +1004,5 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 </body>
-</html> 
+</html>
+[file content end]
