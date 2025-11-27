@@ -255,7 +255,7 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
     if (revenueData.length > 0) {
         // 月營收增率 - 直接從 API 取得
         revenueData.forEach(row => {
-            const yearMonth = row['資料年月']; // 格式: "202411" (YYYYMM，民國年)
+            const yearMonth = row['資料年月']; // 格式: "11411" (民國年YYYYMM)
             const monthGrowthRaw = row['營業收入-去年同月增減(%)'];
             
             if (!yearMonth || !monthGrowthRaw || monthGrowthRaw === '') return;
@@ -293,7 +293,7 @@ function calculateQuarterlyGrowth(revenueData) {
     const quarters = {};
     const byYear = {};
 
-    // 按年月分組（注意：資料年月是民國年格式，如 "11411" = 民國114年11月）
+    // 按年月分組（資料年月是民國年格式，如 "11411" = 民國114年11月）
     revenueData.forEach(row => {
         const ym = row['資料年月'];
         if (!ym || ym.length < 5) return;
@@ -301,7 +301,7 @@ function calculateQuarterlyGrowth(revenueData) {
         // 民國年格式：前3碼是年份，後2碼是月份
         const rocYear = ym.substring(0, 3); // 民國年：如 "114"
         const month = parseInt(ym.substring(3, 5)); // 月份：如 "11"
-        const westYear = (parseInt(rocYear) + 1911).toString(); // 轉西元年：114 + 1911 = 2025
+        const westYear = (parseInt(rocYear) + 1911).toString(); // 轉西元年：2025
         
         const revenueRaw = row['營業收入-當月營收'];
         
