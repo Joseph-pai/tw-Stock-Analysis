@@ -30,6 +30,7 @@
         .financial-period { background-color: rgba(255, 255, 255, 0.1); padding: 10px; border-radius: 5px; margin-bottom: 10px; }
         .basis-box { background: rgba(0,0,0,0.3); border-left: 4px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 4px; }
         td, th { vertical-align: middle; }
+        .stock-search { max-width: 300px; }
     </style>
 </head>
 <body>
@@ -52,21 +53,29 @@
 
     <div class="row justify-content-center mb-4">
         <div class="col-md-8">
-            <form id="analyzeForm">
-                <div class="row g-2 mb-3">
-                    <div class="col-md-6">
-                        <label class="form-label text-white-50">選擇類股</label>
-                        <select id="stockCategory" class="form-select">
-                            <option value="all">全部類股</option>
-                        </select>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label text-white-50">選擇股票</label>
-                        <select id="stockSelect" class="form-select" required>
-                            <option value="">請先選擇類股</option>
-                        </select>
+            <div class="row g-2 mb-3">
+                <div class="col-md-4">
+                    <label class="form-label text-white-50">手動輸入股票代碼</label>
+                    <div class="input-group stock-search">
+                        <input type="text" id="manualStockCode" class="form-control" placeholder="例如: 2330">
+                        <button class="btn btn-info text-white fw-bold" id="searchStock">搜尋</button>
                     </div>
                 </div>
+                <div class="col-md-4">
+                    <label class="form-label text-white-50">選擇類股</label>
+                    <select id="stockCategory" class="form-select">
+                        <option value="all">全部類股</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label text-white-50">選擇股票</label>
+                    <select id="stockSelect" class="form-select" required>
+                        <option value="">請先選擇類股</option>
+                    </select>
+                </div>
+            </div>
+            
+            <form id="analyzeForm">
                 <div class="row g-2">
                     <div class="col-auto">
                         <label class="text-white-50 small">分析時間範圍：</label>
@@ -187,11 +196,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ================= 核心 API 函數 =================
 
-    async function fetchFinmind(dataset, dataId = '', startDate = '', retries = 3) {
+    async function fetchFinmind(dataset, dataId = '', startDate = '', endDate = '', retries = 3) {
         if (!TOKEN && dataset !== 'TaiwanStockInfo') return null;
         let url = `/.netlify/functions/fetch-finmind?dataset=${dataset}`;
         if (dataId) url += `&data_id=${dataId}`;
         if (startDate) url += `&start_date=${startDate}`;
+        if (endDate) url += `&end_date=${endDate}`;
         if (TOKEN) url += `&token=${TOKEN}`;
         
         for (let attempt = 1; attempt <= retries; attempt++) {
@@ -241,8 +251,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { return null; }
     }
 
-    async function fetchTWSEFinancials(stockId) {
-        log(`證交所財報 請求中... (${stockId})`);
+    // ================= 財務數據獲取 - 優先 FinMind =================
+    
+    async function fetchFinancialData(stockId) {
+        log(`開始獲取財務數據: ${stockId}`);
         
         // 重置財務快取
         financialCache = {
@@ -252,8 +264,194 @@ document.addEventListener('DOMContentLoaded', () => {
             profitMargin: { quarters: {}, year: null }
         };
         
+        let source = 'Unknown';
+        
+        // 1. 優先從 FinMind 獲取數據
+        if (TOKEN) {
+            log('嘗試從 FinMind 獲取財務數據...');
+            const finmindData = await fetchFinmindFinancials(stockId);
+            if (finmindData) {
+                source = 'FinMind';
+                log('✅ FinMind 財務數據載入成功');
+                return { source, data: finmindData };
+            }
+        }
+        
+        // 2. 備援：證交所財報
+        log('FinMind 失敗，嘗試證交所財報...');
+        const twseData = await fetchTWSEFinancials(stockId);
+        if (twseData) {
+            source = 'TWSE';
+            log('✅ 證交所財務數據載入成功');
+            return { source, data: twseData };
+        }
+        
+        // 3. 最終備援：Yahoo Finance
+        log('證交所失敗，嘗試 Yahoo Finance...');
+        const yahooData = await fetchYahooFinanceFinancials(stockId);
+        if (yahooData) {
+            source = 'Yahoo Finance';
+            log('✅ Yahoo Finance 財務數據載入成功');
+            return { source, data: yahooData };
+        }
+        
+        log('❌ 所有財務數據來源都失敗');
+        return null;
+    }
+
+    async function fetchFinmindFinancials(stockId) {
         try {
-            // 調用新的結構化 API
+            // 獲取多個財務數據集
+            const [balanceSheet, incomeStatement, revenueData, perData] = await Promise.all([
+                fetchFinmind('TaiwanStockBalanceSheet', stockId, '2020-01-01'),
+                fetchFinmind('TaiwanStockIncomeStatement', stockId, '2020-01-01'),
+                fetchFinmind('TaiwanStockMonthRevenue', stockId, '2020-01-01'),
+                fetchFinmind('TaiwanStockPER', stockId, '2020-01-01')
+            ]);
+
+            if (!balanceSheet && !incomeStatement && !revenueData) return null;
+
+            // 處理 EPS 數據
+            if (perData?.data) {
+                perData.data.forEach(item => {
+                    const date = new Date(item.date);
+                    const quarter = Math.floor((date.getMonth() + 3) / 3);
+                    const eps = parseFloat(item.EPS);
+                    
+                    if (!isNaN(eps)) {
+                        // 季度數據
+                        financialCache.eps.quarters[`Q${quarter}`] = eps;
+                        
+                        // 年度數據（使用最新季度）
+                        if (!financialCache.eps.year || date > new Date(financialCache.eps._latestDate || 0)) {
+                            financialCache.eps.year = eps * 4; // 估算年度 EPS
+                            financialCache.eps._latestDate = item.date;
+                        }
+                    }
+                });
+            }
+
+            // 處理 ROE 數據
+            if (incomeStatement?.data && balanceSheet?.data) {
+                incomeStatement.data.forEach(income => {
+                    const date = new Date(income.date);
+                    const quarter = Math.floor((date.getMonth() + 3) / 3);
+                    
+                    const netIncome = parseFloat(income.net_income);
+                    const balance = balanceSheet.data.find(b => b.date === income.date);
+                    
+                    if (balance && !isNaN(netIncome)) {
+                        const equity = parseFloat(balance.equity);
+                        if (equity > 0) {
+                            const roe = (netIncome / equity) * 100;
+                            
+                            // 季度數據
+                            financialCache.roe.quarters[`Q${quarter}`] = parseFloat(roe.toFixed(2));
+                            
+                            // 年度數據
+                            if (!financialCache.roe.year || date > new Date(financialCache.roe._latestDate || 0)) {
+                                financialCache.roe.year = parseFloat(roe.toFixed(2));
+                                financialCache.roe._latestDate = income.date;
+                            }
+                        }
+                    }
+                });
+            }
+
+            // 處理營收成長率
+            if (revenueData?.data) {
+                const sortedRevenue = revenueData.data.sort((a, b) => new Date(b.date) - new Date(a.date));
+                
+                // 月度營收成長率
+                sortedRevenue.slice(0, 12).forEach(item => {
+                    const date = new Date(item.date);
+                    const year = date.getFullYear();
+                    const month = date.getMonth() + 1;
+                    const rocYear = (year - 1911).toString();
+                    const monthKey = `${rocYear}${month.toString().padStart(2, '0')}`;
+                    
+                    const revenue = parseFloat(item.revenue);
+                    const lastYearRevenue = parseFloat(item.revenue_last_year);
+                    
+                    if (!isNaN(revenue) && !isNaN(lastYearRevenue) && lastYearRevenue > 0) {
+                        const growth = ((revenue - lastYearRevenue) / lastYearRevenue) * 100;
+                        financialCache.revenueGrowth.months[monthKey] = parseFloat(growth.toFixed(2));
+                    }
+                });
+
+                // 季度營收成長率
+                const quarters = {};
+                sortedRevenue.forEach(item => {
+                    const date = new Date(item.date);
+                    const year = date.getFullYear();
+                    const quarter = Math.floor((date.getMonth() + 3) / 3);
+                    const key = `${year}Q${quarter}`;
+                    
+                    if (!quarters[key]) quarters[key] = 0;
+                    quarters[key] += parseFloat(item.revenue) || 0;
+                });
+
+                // 計算季度成長率
+                const quarterKeys = Object.keys(quarters).sort();
+                for (let i = 1; i < quarterKeys.length; i++) {
+                    const current = quarters[quarterKeys[i]];
+                    const previous = quarters[quarterKeys[i - 1]];
+                    
+                    if (previous > 0) {
+                        const growth = ((current - previous) / previous) * 100;
+                        financialCache.revenueGrowth.quarters[quarterKeys[i].slice(-2)] = parseFloat(growth.toFixed(2));
+                    }
+                }
+
+                // 年度營收成長率
+                if (sortedRevenue.length >= 2) {
+                    const currentYear = sortedRevenue[0].revenue * 12; // 估算年度
+                    const lastYear = sortedRevenue[12]?.revenue * 12 || currentYear * 0.8; // 估算
+                    
+                    if (lastYear > 0) {
+                        const growth = ((currentYear - lastYear) / lastYear) * 100;
+                        financialCache.revenueGrowth.year = parseFloat(growth.toFixed(2));
+                    }
+                }
+            }
+
+            // 處理毛利率
+            if (incomeStatement?.data) {
+                incomeStatement.data.forEach(income => {
+                    const date = new Date(income.date);
+                    const quarter = Math.floor((date.getMonth() + 3) / 3);
+                    
+                    const revenue = parseFloat(income.operating_revenue);
+                    const cost = parseFloat(income.operating_costs);
+                    
+                    if (!isNaN(revenue) && !isNaN(cost) && revenue > 0) {
+                        const grossProfit = revenue - cost;
+                        const margin = (grossProfit / revenue) * 100;
+                        
+                        // 季度數據
+                        financialCache.profitMargin.quarters[`Q${quarter}`] = parseFloat(margin.toFixed(2));
+                        
+                        // 年度數據
+                        if (!financialCache.profitMargin.year || date > new Date(financialCache.profitMargin._latestDate || 0)) {
+                            financialCache.profitMargin.year = parseFloat(margin.toFixed(2));
+                            financialCache.profitMargin._latestDate = income.date;
+                        }
+                    }
+                });
+            }
+
+            return financialCache;
+
+        } catch (err) {
+            log(`FinMind 財務數據獲取失敗: ${err.message}`);
+            return null;
+        }
+    }
+
+    async function fetchTWSEFinancials(stockId) {
+        log(`證交所財報 請求中... (${stockId})`);
+        
+        try {
             const response = await fetch(`/.netlify/functions/fetch-twse?type=financials&stock_id=${stockId}`);
             
             if (!response.ok) {
@@ -263,32 +461,18 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const structuredData = await response.json();
             
-            // 檢查是否有錯誤
             if (structuredData.error) {
                 log(`證交所數據錯誤: ${structuredData.error}`);
                 return null;
             }
             
-            // 直接將結構化數據賦值給 financialCache
             financialCache = structuredData;
             
             log(`✅ TWSE 結構化數據載入成功`);
-            log(`📊 數據統計:`);
-            log(`  - EPS 季度: ${Object.keys(structuredData.eps?.quarters || {}).join(', ') || '無'}`);
-            log(`  - EPS 年度: ${structuredData.eps?.year || 'N/A'}`);
-            log(`  - ROE 季度: ${Object.keys(structuredData.roe?.quarters || {}).join(', ') || '無'}`);
-            log(`  - ROE 年度: ${structuredData.roe?.year || 'N/A'}`);
-            log(`  - 月營收筆數: ${Object.keys(structuredData.revenueGrowth?.months || {}).length}`);
-            log(`  - 季營收: ${Object.keys(structuredData.revenueGrowth?.quarters || {}).join(', ') || '無'}`);
-            log(`  - 年營收成長: ${structuredData.revenueGrowth?.year || 'N/A'}%`);
-            log(`  - 毛利率季度: ${Object.keys(structuredData.profitMargin?.quarters || {}).join(', ') || '無'}`);
-            log(`  - 毛利率年度: ${structuredData.profitMargin?.year || 'N/A'}%`);
-            
-            return { source: 'TWSE (Structured Multi-period)', ...structuredData };
+            return financialCache;
             
         } catch (err) {
             log(`證交所數據處理失敗: ${err.message}`);
-            console.error('詳細錯誤:', err);
             return null;
         }
     }
@@ -305,7 +489,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     financialCache.revenueGrowth.year = result.financialData?.revenueGrowth?.raw ? (result.financialData.revenueGrowth.raw * 100).toFixed(2) : 'N/A';
                 }
                 financialCache.profitMargin.quarters['Q1'] = result.financialData?.grossMargins?.raw ? result.financialData.grossMargins.raw * 100 : 'N/A';
-                return { source: 'Yahoo Finance' };
+                return financialCache;
             }
             return null;
         } catch (err) { return null; }
@@ -391,6 +575,45 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (filteredStocks.length === 0) stockSelect.appendChild(new Option('該類股無股票資料', ''));
     }
+
+    // ================= 手動股票代碼搜尋 =================
+    
+    document.getElementById('searchStock').onclick = async () => {
+        const manualCode = document.getElementById('manualStockCode').value.trim();
+        if (!manualCode) {
+            alert('請輸入股票代碼');
+            return;
+        }
+
+        log(`手動搜尋股票代碼: ${manualCode}`);
+        
+        // 如果已經有股票數據，直接搜尋
+        if (stockData.length > 0) {
+            const foundStock = stockData.find(stock => 
+                stock.stock_id === manualCode || 
+                stock.stock_name.includes(manualCode)
+            );
+            
+            if (foundStock) {
+                // 設置類股選擇
+                document.getElementById('stockCategory').value = foundStock.industry_category;
+                updateStockSelect();
+                
+                // 設置股票選擇
+                document.getElementById('stockSelect').value = foundStock.stock_id;
+                
+                log(`找到股票: ${foundStock.stock_id} ${foundStock.stock_name}`);
+                alert(`找到股票: ${foundStock.stock_id} ${foundStock.stock_name}`);
+            } else {
+                log(`未找到股票代碼: ${manualCode}`);
+                alert(`未找到股票代碼: ${manualCode}`);
+            }
+        } else {
+            log('股票數據尚未載入完成，請稍後再試');
+            alert('股票數據尚未載入完成，請稍後再試');
+        }
+    };
+
     document.getElementById('stockCategory').addEventListener('change', updateStockSelect);
 
     document.getElementById('saveToken').onclick = async () => {
@@ -747,11 +970,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (!priceDataFinal) throw new Error('無法取得股價資料，請稍後再試');
 
-            let financialData = await fetchTWSEFinancials(symbol);
-            if (!financialData || financialCache.eps.year === 'N/A' || financialCache.revenueGrowth.year === 'N/A') {
-                 log('證交所數據不完整，嘗試 Yahoo Finance 備援...');
-                 financialData = await fetchYahooFinanceFinancials(symbol);
-            }
+            // 使用新的財務數據獲取函數
+            const financialResult = await fetchFinancialData(symbol);
+            const finSource = financialResult?.source || '無';
             
             let newsRaw = null;
             if (TOKEN) newsRaw = await fetchFinmind('TaiwanStockNews', symbol, startDate);
@@ -856,8 +1077,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                  riskReason = "無完整財報數據 (不計分)";
             }
-
-            const finSource = financialData?.source || '無';
             
             document.getElementById('result').innerHTML = `
                 <div class="text-center mb-5">
@@ -968,4 +1187,4 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 </body>
-</html> 
+</html>
