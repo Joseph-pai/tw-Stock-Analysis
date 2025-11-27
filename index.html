@@ -151,17 +151,6 @@ document.addEventListener('DOMContentLoaded', () => {
         profitMargin: { quarters: {}, year: null }
     };
 
-    const twseIndustryMap = {
-        "01": "水泥工業", "02": "食品工業", "03": "塑膠工業", "04": "紡織纖維", "05": "電機機械",
-        "06": "電器電纜", "07": "化學生技醫療", "08": "玻璃陶瓷", "09": "造紙工業", "10": "鋼鐵工業",
-        "11": "橡膠工業", "12": "汽車工業", "13": "電子工業", "14": "建材營造", "15": "航運業",
-        "16": "觀光事業", "17": "金融保險", "18": "貿易百貨", "19": "綜合", "20": "其他",
-        "21": "化學工業", "22": "生技醫療業", "23": "油電燃氣業", "24": "半導體業", "25": "電腦及週邊設備業",
-        "26": "光電業", "27": "通信網路業", "28": "電子零組件業", "29": "電子通路業", "30": "資訊服務業",
-        "31": "其他電子業", "32": "文化創意業", "33": "農業科技業", "34": "電子商務業",
-        "35": "綠能環保", "36": "數位雲端", "37": "運動休閒", "38": "居家生活", "91": "存託憑證"
-    };
-
     // UI 初始化
     document.getElementById('tokenInput').value = TOKEN;
     document.getElementById('tokenStatus').innerHTML = TOKEN ? '<span style="color:#28a745">Token 已從記錄中載入 (下次免輸入)</span>' : '<span style="color:#ffc107">未設定 Token，將使用公開資料</span>';
@@ -315,6 +304,173 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ================= FinMind 財務數據備援 =================
+    async function fetchFinMindFinancials(stockId) {
+        if (!TOKEN) {
+            log('無 FinMind Token，跳過財務數據備援');
+            return null;
+        }
+
+        log(`FinMind 財務數據備援 請求中... (${stockId})`);
+        
+        try {
+            // 獲取財務報表數據
+            const [incomeData, balanceData, revenueData] = await Promise.all([
+                fetchFinmind('TaiwanStockFinancialStatements', stockId, '2024-01-01'),
+                fetchFinmind('TaiwanStockBalanceSheet', stockId, '2024-01-01'),
+                fetchFinmind('TaiwanStockMonthRevenue', stockId, '2024-01-01')
+            ]);
+
+            if (!incomeData?.data?.length && !balanceData?.data?.length && !revenueData?.data?.length) {
+                log('FinMind 財務數據全部為空');
+                return null;
+            }
+
+            log(`FinMind 數據載入: 損益表 ${incomeData?.data?.length || 0}, 資產表 ${balanceData?.data?.length || 0}, 營收 ${revenueData?.data?.length || 0}`);
+
+            // 解析 FinMind 數據
+            const result = parseFinMindFinancialData(incomeData?.data || [], balanceData?.data || [], revenueData?.data || []);
+            
+            if (result.hasData) {
+                // 合併到 financialCache
+                Object.assign(financialCache, result.data);
+                log(`✅ FinMind 財務數據備援成功`);
+                return { source: 'FinMind (Backup)' };
+            } else {
+                log('FinMind 無有效財務數據');
+                return null;
+            }
+
+        } catch (err) {
+            log(`FinMind 財務數據備援失敗: ${err.message}`);
+            return null;
+        }
+    }
+
+    function parseFinMindFinancialData(incomeData, balanceData, revenueData) {
+        const result = {
+            eps: { quarters: {}, year: null },
+            roe: { quarters: {}, year: null },
+            revenueGrowth: { 
+                monthOverMonth: {},
+                yearOverYear: {},
+                quarters: {},
+                cumulative: null
+            },
+            profitMargin: { quarters: {}, year: null },
+            hasData: false
+        };
+
+        // 解析 EPS 數據
+        incomeData.forEach(row => {
+            if (row.EPS && row.date) {
+                const date = new Date(row.date);
+                const year = date.getFullYear();
+                const quarter = Math.floor((date.getMonth() + 3) / 3); // 計算季度
+                
+                if (quarter >= 1 && quarter <= 4) {
+                    result.eps.quarters[`${year}Q${quarter}`] = parseFloat(row.EPS);
+                    result.hasData = true;
+                }
+                
+                // 使用最新季度的 EPS 作為年度參考
+                if (!result.eps.year || date > new Date(result.eps.year.date)) {
+                    result.eps.year = parseFloat(row.EPS);
+                }
+            }
+        });
+
+        // 解析 ROE 數據
+        balanceData.forEach(balanceRow => {
+            const date = new Date(balanceRow.date);
+            const year = date.getFullYear();
+            const quarter = Math.floor((date.getMonth() + 3) / 3);
+            
+            // 找到對應的損益表數據計算 ROE
+            const incomeRow = incomeData.find(inc => inc.date === balanceRow.date);
+            if (incomeRow && balanceRow.equity && balanceRow.equity !== 0) {
+                const netIncome = parseFloat(incomeRow.net_income || incomeRow.net_income_after_tax || 0);
+                const equity = parseFloat(balanceRow.equity);
+                const roe = (netIncome / equity) * 100;
+                
+                if (quarter >= 1 && quarter <= 4) {
+                    result.roe.quarters[`${year}Q${quarter}`] = parseFloat(roe.toFixed(2));
+                    result.hasData = true;
+                }
+            }
+        });
+
+        // 計算年度 ROE
+        const quarterROEs = Object.values(result.roe.quarters).filter(val => !isNaN(val));
+        if (quarterROEs.length > 0) {
+            result.roe.year = quarterROEs.reduce((sum, val) => sum + val, 0) / quarterROEs.length;
+        }
+
+        // 解析營收成長率
+        if (revenueData.length >= 2) {
+            // 按日期排序
+            const sortedRevenue = revenueData.sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            // 計算月增率
+            for (let i = 1; i < sortedRevenue.length; i++) {
+                const current = sortedRevenue[i];
+                const previous = sortedRevenue[i - 1];
+                
+                if (current.revenue && previous.revenue && previous.revenue !== 0) {
+                    const growth = ((current.revenue - previous.revenue) / previous.revenue) * 100;
+                    const date = new Date(current.date);
+                    const key = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    result.revenueGrowth.monthOverMonth[key] = parseFloat(growth.toFixed(2));
+                    result.hasData = true;
+                }
+            }
+
+            // 計算年增率 (與去年同月比較)
+            revenueData.forEach(current => {
+                const currentDate = new Date(current.date);
+                const lastYearDate = new Date(currentDate.getFullYear() - 1, currentDate.getMonth(), 1);
+                const lastYearStr = lastYearDate.toISOString().split('T')[0];
+                
+                const lastYearRevenue = revenueData.find(rev => rev.date.startsWith(lastYearStr.substring(0, 7)));
+                if (lastYearRevenue && lastYearRevenue.revenue && current.revenue && lastYearRevenue.revenue !== 0) {
+                    const growth = ((current.revenue - lastYearRevenue.revenue) / lastYearRevenue.revenue) * 100;
+                    const key = `${currentDate.getFullYear()}${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+                    result.revenueGrowth.yearOverYear[key] = parseFloat(growth.toFixed(2));
+                    result.hasData = true;
+                }
+            });
+
+            // 使用最新年增率作為累計年增率
+            const latestYearGrowth = Object.values(result.revenueGrowth.yearOverYear).pop();
+            if (latestYearGrowth) {
+                result.revenueGrowth.cumulative = latestYearGrowth;
+            }
+        }
+
+        // 解析毛利率
+        incomeData.forEach(row => {
+            if (row.gross_margin && row.date) {
+                const date = new Date(row.date);
+                const year = date.getFullYear();
+                const quarter = Math.floor((date.getMonth() + 3) / 3);
+                
+                if (quarter >= 1 && quarter <= 4) {
+                    result.profitMargin.quarters[`${year}Q${quarter}`] = parseFloat(row.gross_margin);
+                    result.hasData = true;
+                }
+                
+                // 使用最新季度的毛利率作為年度參考
+                if (!result.profitMargin.year || date > new Date(result.profitMargin.year.date)) {
+                    result.profitMargin.year = parseFloat(row.gross_margin);
+                }
+            }
+        });
+
+        log(`FinMind 解析結果: EPS季度 ${Object.keys(result.eps.quarters).length}, ROE季度 ${Object.keys(result.roe.quarters).length}, 月增率 ${Object.keys(result.revenueGrowth.monthOverMonth).length}, 毛利率季度 ${Object.keys(result.profitMargin.quarters).length}`);
+
+        return result;
+    }
+
     async function fetchYahooFinanceFinancials(stockId) {
         try {
             const response = await fetch(`/.netlify/functions/fetch-financials?id=${stockId}`);
@@ -355,8 +511,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (response.ok) {
                     const twseData = await response.json();
                     stockData = twseData.map(item => {
+                        // 直接使用 API 返回的產業別
                         let category = item['產業別'] || '其他';
-                        if (twseIndustryMap[category]) category = twseIndustryMap[category];
                         return {
                             stock_id: item['公司代號'] || item.Code,
                             stock_name: item['公司名稱'] || item['公司簡稱'] || item.Name,
@@ -803,9 +959,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!priceDataFinal) throw new Error('無法取得股價資料，請稍後再試');
 
             let financialData = await fetchTWSEFinancials(symbol);
-            if (!financialData || financialCache.eps.year === 'N/A' || financialCache.revenueGrowth.cumulative === null) {
-                 log('證交所數據不完整，嘗試 Yahoo Finance 備援...');
-                 financialData = await fetchYahooFinanceFinancials(symbol);
+            
+            // 如果證交所數據失敗，嘗試 FinMind 備援
+            if (!financialData) {
+                log('證交所數據失敗，嘗試 FinMind 財務數據備援...');
+                financialData = await fetchFinMindFinancials(symbol);
+            }
+            
+            // 如果 FinMind 也失敗，嘗試 Yahoo Finance 備援
+            if (!financialData) {
+                log('FinMind 備援失敗，嘗試 Yahoo Finance 備援...');
+                financialData = await fetchYahooFinanceFinancials(symbol);
             }
             
             let newsRaw = null;
