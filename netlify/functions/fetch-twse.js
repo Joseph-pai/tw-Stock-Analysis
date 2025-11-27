@@ -1,3 +1,5 @@
+[file name]: fetch-twse.js
+[file content begin]
 const fetch = require('node-fetch');
 
 exports.handler = async (event, context) => {
@@ -162,7 +164,7 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
 
         // 季別 "0" 代表年度，"1"~"4" 代表各季度
         if (quarter && quarter !== '0') {
-            result.eps.quarters[`Q${quarter}`] = eps;
+            result.eps.quarters[`${year}Q${quarter}`] = eps;
         } else if (quarter === '0') {
             result.eps.year = eps;
         }
@@ -199,13 +201,20 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
                 const roe = (netIncome / equity) * 100;
 
                 if (quarter && quarter !== '0') {
-                    result.roe.quarters[`Q${quarter}`] = parseFloat(roe.toFixed(2));
+                    result.roe.quarters[`${year}Q${quarter}`] = parseFloat(roe.toFixed(2));
                 } else if (quarter === '0') {
                     result.roe.year = parseFloat(roe.toFixed(2));
                 }
             }
         }
     });
+
+    // === 計算年度ROE (季度平均值) ===
+    const quarterROEs = Object.values(result.roe.quarters).filter(val => !isNaN(val));
+    if (quarterROEs.length > 0) {
+        const avgROE = quarterROEs.reduce((sum, val) => sum + val, 0) / quarterROEs.length;
+        result.roe.year = parseFloat(avgROE.toFixed(2));
+    }
 
     // === 解析毛利率（直接從 t187ap17_L 取得）===
     ratioData.forEach(row => {
@@ -219,7 +228,7 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
         if (isNaN(margin)) return;
 
         if (quarter && quarter !== '0') {
-            result.profitMargin.quarters[`Q${quarter}`] = margin;
+            result.profitMargin.quarters[`${year}Q${quarter}`] = margin;
         } else if (quarter === '0') {
             result.profitMargin.year = margin;
         }
@@ -244,16 +253,28 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
             const margin = (grossProfit / revenue) * 100;
 
             if (quarter && quarter !== '0') {
-                result.profitMargin.quarters[`Q${quarter}`] = parseFloat(margin.toFixed(2));
+                result.profitMargin.quarters[`${year}Q${quarter}`] = parseFloat(margin.toFixed(2));
             } else if (quarter === '0') {
                 result.profitMargin.year = parseFloat(margin.toFixed(2));
             }
         });
     }
 
+    // === 計算年度毛利率 (最新年度值) ===
+    const currentYear = Math.max(...Object.keys(result.profitMargin.quarters)
+        .map(key => parseInt(key.substring(0, 4))));
+    const currentYearMargins = Object.entries(result.profitMargin.quarters)
+        .filter(([key]) => key.startsWith(currentYear))
+        .map(([_, value]) => value);
+    
+    if (currentYearMargins.length > 0 && !result.profitMargin.year) {
+        // 使用最新年度的最新季度值作為年度參考值
+        result.profitMargin.year = currentYearMargins[currentYearMargins.length - 1];
+    }
+
     // === 解析營收成長率 ===
     if (revenueData.length > 0) {
-        // 月營收增率 - 直接從 API 取得
+        // 月營收增率 - 直接從 API 取得月增率
         revenueData.forEach(row => {
             const yearMonth = row['資料年月']; // 格式: "11411" (民國年YYYYMM)
             const monthGrowthRaw = row['營業收入-去年同月增減(%)'];
@@ -265,6 +286,12 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
                 result.revenueGrowth.months[yearMonth] = monthGrowth;
             }
         });
+
+        // 計算月營收月增率 (本月 vs 上月)
+        result.revenueGrowth.monthOverMonth = calculateMonthOverMonthGrowth(revenueData);
+
+        // 計算季營收成長率 (本季 vs 上季)
+        result.revenueGrowth.quarters = calculateQuarterOverQuarterGrowth(revenueData);
 
         // 年營收增率 - 使用「累計營收增減率」
         const sortedRevenue = [...revenueData].sort((a, b) => 
@@ -280,18 +307,41 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
                 }
             }
         }
-
-        // 計算季營收成長率
-        result.revenueGrowth.quarters = calculateQuarterlyGrowth(revenueData);
     }
 
     return result;
 }
 
-// === 計算季度營收成長率 ===
-function calculateQuarterlyGrowth(revenueData) {
-    const quarters = {};
-    const byYear = {};
+// === 計算月營收月增率 ===
+function calculateMonthOverMonthGrowth(revenueData) {
+    const growthRates = {};
+    
+    // 按年月排序 (新到舊)
+    const sortedData = [...revenueData].sort((a, b) => 
+        (b['資料年月'] || '').localeCompare(a['資料年月'] || '')
+    );
+
+    for (let i = 0; i < sortedData.length - 1; i++) {
+        const current = sortedData[i];
+        const previous = sortedData[i + 1];
+        
+        const currentYM = current['資料年月'];
+        const currentRevenue = parseFloat(String(current['營業收入-當月營收']).replace(/,/g, ''));
+        const previousRevenue = parseFloat(String(previous['營業收入-當月營收']).replace(/,/g, ''));
+        
+        if (currentYM && !isNaN(currentRevenue) && !isNaN(previousRevenue) && previousRevenue !== 0) {
+            const growth = ((currentRevenue - previousRevenue) / previousRevenue) * 100;
+            growthRates[currentYM] = parseFloat(growth.toFixed(2));
+        }
+    }
+    
+    return growthRates;
+}
+
+// === 計算季度營收季增率 ===
+function calculateQuarterOverQuarterGrowth(revenueData) {
+    const growthRates = {};
+    const byYearQuarter = {};
 
     // 按年月分組（資料年月是民國年格式，如 "11411" = 民國114年11月）
     revenueData.forEach(row => {
@@ -310,38 +360,35 @@ function calculateQuarterlyGrowth(revenueData) {
         const revenue = parseFloat(String(revenueRaw).replace(/,/g, ''));
         if (isNaN(revenue)) return;
 
-        if (!byYear[westYear]) byYear[westYear] = {};
-        byYear[westYear][month] = revenue;
+        // 確定季度
+        let quarter;
+        if (month >= 1 && month <= 3) quarter = 'Q1';
+        else if (month >= 4 && month <= 6) quarter = 'Q2';
+        else if (month >= 7 && month <= 9) quarter = 'Q3';
+        else if (month >= 10 && month <= 12) quarter = 'Q4';
+        else return;
+
+        const key = `${westYear}${quarter}`;
+        if (!byYearQuarter[key]) byYearQuarter[key] = 0;
+        byYearQuarter[key] += revenue;
     });
 
-    // 計算各季度總營收
-    const quarterRevenues = {};
-    const years = Object.keys(byYear).sort();
-
-    years.forEach(year => {
-        const months = byYear[year];
-        quarterRevenues[`${year}Q1`] = (months[1] || 0) + (months[2] || 0) + (months[3] || 0);
-        quarterRevenues[`${year}Q2`] = (months[4] || 0) + (months[5] || 0) + (months[6] || 0);
-        quarterRevenues[`${year}Q3`] = (months[7] || 0) + (months[8] || 0) + (months[9] || 0);
-        quarterRevenues[`${year}Q4`] = (months[10] || 0) + (months[11] || 0) + (months[12] || 0);
-    });
-
-    // 計算年增率
-    const growthRates = {};
-    years.forEach((year, idx) => {
-        if (idx === 0) return;
-        const prevYear = years[idx - 1];
-
-        ['Q1', 'Q2', 'Q3', 'Q4'].forEach(q => {
-            const current = quarterRevenues[`${year}${q}`];
-            const previous = quarterRevenues[`${prevYear}${q}`];
-
-            if (current && previous && previous !== 0) {
-                const growth = ((current - previous) / previous) * 100;
-                growthRates[q] = parseFloat(growth.toFixed(2));
-            }
-        });
-    });
+    // 計算季增率
+    const quarters = Object.keys(byYearQuarter).sort();
+    
+    for (let i = 1; i < quarters.length; i++) {
+        const currentQuarter = quarters[i];
+        const previousQuarter = quarters[i - 1];
+        
+        const currentRevenue = byYearQuarter[currentQuarter];
+        const previousRevenue = byYearQuarter[previousQuarter];
+        
+        if (previousRevenue !== 0) {
+            const growth = ((currentRevenue - previousRevenue) / previousRevenue) * 100;
+            growthRates[currentQuarter] = parseFloat(growth.toFixed(2));
+        }
+    }
 
     return growthRates;
 }
+[file content end]
