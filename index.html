@@ -142,7 +142,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let financialCache = {
         eps: { quarters: {}, year: null },
         roe: { quarters: {}, year: null },
-        revenueGrowth: { months: {}, monthOverMonth: {}, quarters: {}, year: null },
+        revenueGrowth: { 
+            monthOverMonth: {},  // 月增率
+            yearOverYear: {},    // 年增率
+            quarters: {},        // 季增率
+            cumulative: null     // 累計年增率
+        },
         profitMargin: { quarters: {}, year: null }
     };
 
@@ -250,7 +255,12 @@ document.addEventListener('DOMContentLoaded', () => {
         financialCache = {
             eps: { quarters: {}, year: null },
             roe: { quarters: {}, year: null },
-            revenueGrowth: { months: {}, monthOverMonth: {}, quarters: {}, year: null },
+            revenueGrowth: { 
+                monthOverMonth: {},
+                yearOverYear: {},
+                quarters: {},
+                cumulative: null
+            },
             profitMargin: { quarters: {}, year: null }
         };
         
@@ -280,12 +290,21 @@ document.addEventListener('DOMContentLoaded', () => {
             log(`  - EPS 年度: ${structuredData.eps?.year || 'N/A'}`);
             log(`  - ROE 季度: ${Object.keys(structuredData.roe?.quarters || {}).join(', ') || '無'}`);
             log(`  - ROE 年度: ${structuredData.roe?.year || 'N/A'}`);
-            log(`  - 月營收筆數: ${Object.keys(structuredData.revenueGrowth?.months || {}).length}`);
             log(`  - 月增率筆數: ${Object.keys(structuredData.revenueGrowth?.monthOverMonth || {}).length}`);
-            log(`  - 季營收: ${Object.keys(structuredData.revenueGrowth?.quarters || {}).join(', ') || '無'}`);
-            log(`  - 年營收成長: ${structuredData.revenueGrowth?.year || 'N/A'}%`);
+            log(`  - 年增率筆數: ${Object.keys(structuredData.revenueGrowth?.yearOverYear || {}).length}`);
+            log(`  - 季增率筆數: ${Object.keys(structuredData.revenueGrowth?.quarters || {}).length}`);
+            log(`  - 累計年增率: ${structuredData.revenueGrowth?.cumulative || 'N/A'}%`);
             log(`  - 毛利率季度: ${Object.keys(structuredData.profitMargin?.quarters || {}).join(', ') || '無'}`);
             log(`  - 毛利率年度: ${structuredData.profitMargin?.year || 'N/A'}%`);
+            
+            // 調試信息
+            if (structuredData._debug) {
+                log(`🔍 調試信息:`);
+                log(`  - 損益表年度: ${structuredData._debug.incomeYears?.join(', ') || '無'}`);
+                log(`  - 資產表年度: ${structuredData._debug.balanceYears?.join(', ') || '無'}`);
+                log(`  - 營收年月: ${structuredData._debug.revenueMonths?.join(', ') || '無'}`);
+                log(`  - 營益年度: ${structuredData._debug.ratioYears?.join(', ') || '無'}`);
+            }
             
             return { source: 'TWSE (Structured Multi-period)', ...structuredData };
             
@@ -304,8 +323,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (result && !result.error) {
                 financialCache.eps.year = result.defaultKeyStatistics?.trailingEps?.raw || 'N/A';
                 financialCache.roe.year = result.financialData?.returnOnEquity?.raw ? result.financialData.returnOnEquity.raw * 100 : 'N/A';
-                if (financialCache.revenueGrowth.year === 'N/A') {
-                    financialCache.revenueGrowth.year = result.financialData?.revenueGrowth?.raw ? (result.financialData.revenueGrowth.raw * 100).toFixed(2) : 'N/A';
+                if (financialCache.revenueGrowth.cumulative === null) {
+                    financialCache.revenueGrowth.cumulative = result.financialData?.revenueGrowth?.raw ? (result.financialData.revenueGrowth.raw * 100).toFixed(2) : 'N/A';
                 }
                 financialCache.profitMargin.quarters['Q1'] = result.financialData?.grossMargins?.raw ? result.financialData.grossMargins.raw * 100 : 'N/A';
                 return { source: 'Yahoo Finance' };
@@ -459,7 +478,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     if (monthKeys.length === 0) {
                         // 備援：使用年增率數據
-                        const yearMonths = financialCache.revenueGrowth?.months || {};
+                        const yearMonths = financialCache.revenueGrowth?.yearOverYear || {};
                         const yearMonthKeys = Object.keys(yearMonths).sort().reverse();
                         if (yearMonthKeys.length === 0) return 'N/A';
                         const latestMonth = yearMonthKeys[0];
@@ -571,7 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const monthKeys = Object.keys(months).sort().reverse();
                     val = monthKeys.length > 0 ? months[monthKeys[0]] : null;
                     if (val === null) {
-                        const yearMonths = financialCache.revenueGrowth?.months || {};
+                        const yearMonths = financialCache.revenueGrowth?.yearOverYear || {};
                         const yearMonthKeys = Object.keys(yearMonths).sort().reverse();
                         val = yearMonthKeys.length > 0 ? yearMonths[yearMonthKeys[0]] : null;
                     }
@@ -784,7 +803,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!priceDataFinal) throw new Error('無法取得股價資料，請稍後再試');
 
             let financialData = await fetchTWSEFinancials(symbol);
-            if (!financialData || financialCache.eps.year === 'N/A' || financialCache.revenueGrowth.year === 'N/A') {
+            if (!financialData || financialCache.eps.year === 'N/A' || financialCache.revenueGrowth.cumulative === null) {
                  log('證交所數據不完整，嘗試 Yahoo Finance 備援...');
                  financialData = await fetchYahooFinanceFinancials(symbol);
             }
