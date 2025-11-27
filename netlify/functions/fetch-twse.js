@@ -91,51 +91,62 @@ async function getStructuredFinancials(stockId, headers) {
                 fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_bd'),
                 fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_ins')
             ]).then(responses => Promise.all(responses.map(r => r.ok ? r.json() : []))),
-
-            // 月營收數據
-            fetch('https://openapi.twse.com.tw/v1/opendata/t187ap05_L').then(r => r.ok ? r.json() : []),
             
-            // 財務比率（包含毛利率）
-            fetch('https://openapi.twse.com.tw/v1/opendata/t187ap11_L').then(r => r.ok ? r.json() : [])
+            // 月營收（包含月/年營收增率）
+            fetch('https://openapi.twse.com.tw/v1/opendata/t187ap05_L')
+                .then(r => r.ok ? r.json() : [])
+                .catch(() => []),
+            
+            // 營益分析（包含毛利率）
+            fetch('https://openapi.twse.com.tw/v1/opendata/t187ap17_L')
+                .then(r => r.ok ? r.json() : [])
+                .catch(() => [])
         ]);
 
-        const allIncomeData = incomeRes.flat().filter(item => item['公司代號'] === stockId);
-        const allBalanceData = balanceRes.flat().filter(item => item['公司代號'] === stockId);
-        const allRevenueData = revenueRes.filter(item => item['公司代號'] === stockId);
-        const allRatioData = ratioRes.filter(item => item['公司代號'] === stockId);
+        // 2. 合併並過濾該股票的數據
+        const allIncome = incomeRes.flat().filter(row => row['公司代號'] === stockId);
+        const allBalance = balanceRes.flat().filter(row => row['公司代號'] === stockId);
+        const allRevenue = Array.isArray(revenueRes) ? revenueRes.filter(row => 
+            row['公司代號'] === stockId
+        ) : [];
+        const allRatio = Array.isArray(ratioRes) ? ratioRes.filter(row => 
+            row['公司代號'] === stockId
+        ) : [];
 
-        const structuredData = parseFinancialData(allIncomeData, allBalanceData, allRevenueData, allRatioData);
+        console.log(`找到數據: 損益表 ${allIncome.length}, 資產負債表 ${allBalance.length}, 月營收 ${allRevenue.length}, 營益分析 ${allRatio.length}`);
+
+        // 3. 解析並結構化數據
+        const result = parseFinancialData(allIncome, allBalance, allRevenue, allRatio);
 
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify(structuredData),
+            body: JSON.stringify(result)
         };
 
     } catch (error) {
-        console.error('getStructuredFinancials 錯誤:', error);
-        return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
+        console.error('getStructuredFinancials error:', error);
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ error: error.message, stack: error.stack })
+        };
     }
 }
 
-
-// === 核心：解析財務數據 (已修改邏輯) ===
+// === 核心：數據解析函數 ===
 function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
     const result = {
-        eps: { quarters: {}, year: null, ttm: null }, // 加上 ttm
+        eps: { quarters: {}, year: null },
         roe: { quarters: {}, year: null },
         revenueGrowth: { months: {}, quarters: {}, year: null },
         profitMargin: { quarters: {}, year: null },
-        _debug: { incomeCount: incomeData.length, balanceCount: balanceData.length, revenueCount: revenueData.length, ratioCount: ratioData.length }
-    };
-
-    // Helper: 轉換民國年/季別為 YYYYQQ 格式
-    const getPeriodKey = (rocYear, quarter) => {
-        if (!rocYear || !quarter || quarter === '0') return null;
-        // 確保 rocYear 是字串且有足夠長度
-        if (typeof rocYear !== 'string' || rocYear.length < 2) return null;
-        const westYear = parseInt(rocYear) + 1911;
-        return `${westYear}Q${quarter}`;
+        _debug: {
+            incomeCount: incomeData.length,
+            balanceCount: balanceData.length,
+            revenueCount: revenueData.length,
+            ratioCount: ratioData.length
+        }
     };
 
     // === 解析 EPS ===
@@ -143,146 +154,194 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
         const year = row['年度'];
         const quarter = row['季別'];
         const epsRaw = row['基本每股盈餘（元）'];
+        
         if (!epsRaw || epsRaw === '') return;
+        
         const eps = parseFloat(String(epsRaw).replace(/,/g, ''));
         if (isNaN(eps)) return;
 
+        // 季別 "0" 代表年度，"1"~"4" 代表各季度
         if (quarter && quarter !== '0') {
-            const periodKey = getPeriodKey(year, quarter);
-            if (periodKey) result.eps.quarters[periodKey] = eps;
+            result.eps.quarters[`Q${quarter}`] = eps;
         } else if (quarter === '0') {
-            result.eps.year = eps; // 單一年報數據
+            result.eps.year = eps;
         }
     });
-    
-    // 計算 TTM EPS (最近四季總和)
-    const sortedEpsQuarters = Object.keys(result.eps.quarters).sort().reverse();
-    if (sortedEpsQuarters.length >= 4) {
-        const ttmEps = sortedEpsQuarters.slice(0, 4).reduce((sum, key) => sum + result.eps.quarters[key], 0);
-        result.eps.ttm = parseFloat(ttmEps.toFixed(2));
-    }
-
 
     // === 解析 ROE (計算：淨利 / 股東權益) ===
-    const equityData = {};
-    balanceData.forEach(row => {
-        const periodKey = getPeriodKey(row['年度'], row['季別']);
-        // 股東權益總額
-        let equityRaw = row['權益總額'] || row['歸屬於母公司業主之權益總額'] || row['資產總額'] - row['負債總額'];
-        if (periodKey && equityRaw && equityRaw !== '') {
-            const equity = parseFloat(String(equityRaw).replace(/,/g, ''));
-            if (equity > 0) equityData[periodKey] = equity;
-        }
-    });
-
     incomeData.forEach(incomeRow => {
-        const periodKey = getPeriodKey(incomeRow['年度'], incomeRow['季別']);
-        if (!periodKey) return;
+        const year = incomeRow['年度'];
+        const quarter = incomeRow['季別'];
         
         // 優先使用「歸屬於母公司業主」的淨利
-        let netIncomeRaw = incomeRow['淨利（淨損）歸屬於母公司業主'] || incomeRow['本期淨利（淨損）'];
+        let netIncomeRaw = incomeRow['淨利（淨損）歸屬於母公司業主'] || 
+                          incomeRow['本期淨利（淨損）'];
+        
         if (!netIncomeRaw || netIncomeRaw === '') return;
+        
         const netIncome = parseFloat(String(netIncomeRaw).replace(/,/g, ''));
         if (isNaN(netIncome)) return;
 
-        // ROE = (本期淨利 / 期末股東權益) * 100
-        if (equityData[periodKey] && equityData[periodKey] !== 0) {
-            const roe = (netIncome / equityData[periodKey]) * 100;
-            result.roe.quarters[periodKey] = parseFloat(roe.toFixed(2));
-        } else if (incomeRow['季別'] === '0') {
-            // 保留年度 ROE 的邏輯
-            result.roe.year = incomeRow['股東權益報酬率'] ? parseFloat(String(incomeRow['股東權益報酬率']).replace(/,/g, '')) : null;
+        // 找到對應期間的股東權益
+        const balanceRow = balanceData.find(b => 
+            b['年度'] === year && b['季別'] === quarter
+        );
+
+        if (balanceRow) {
+            let equityRaw = balanceRow['權益總額'] || 
+                           balanceRow['歸屬於母公司業主之權益合計'];
+            
+            if (!equityRaw || equityRaw === '') return;
+            
+            const equity = parseFloat(String(equityRaw).replace(/,/g, ''));
+
+            if (!isNaN(equity) && equity !== 0) {
+                const roe = (netIncome / equity) * 100;
+
+                if (quarter && quarter !== '0') {
+                    result.roe.quarters[`Q${quarter}`] = parseFloat(roe.toFixed(2));
+                } else if (quarter === '0') {
+                    result.roe.year = parseFloat(roe.toFixed(2));
+                }
+            }
         }
     });
 
-    // === 解析毛利率 (從 ratioData 取得) ===
+    // === 解析毛利率（直接從 t187ap17_L 取得）===
     ratioData.forEach(row => {
         const year = row['年度'];
         const quarter = row['季別'];
-        const marginRaw = row['毛利率(%)']; // 假設 API 直接提供
+        const marginRaw = row['毛利率(%)(營業毛利)/(營業收入)'];
+        
         if (!marginRaw || marginRaw === '') return;
-
+        
         const margin = parseFloat(String(marginRaw).replace(/,/g, ''));
         if (isNaN(margin)) return;
 
-        const periodKey = getPeriodKey(year, quarter);
-        if (periodKey) {
-            result.profitMargin.quarters[periodKey] = parseFloat(margin.toFixed(2));
+        if (quarter && quarter !== '0') {
+            result.profitMargin.quarters[`Q${quarter}`] = margin;
         } else if (quarter === '0') {
-            result.profitMargin.year = parseFloat(margin.toFixed(2));
+            result.profitMargin.year = margin;
         }
     });
 
-    // === 解析營收成長率 (新增 MoM & QoQ 計算) ===
-    if (revenueData.length > 0) {
-        const revenueByYearMonth = {}; // YYYYMM -> Revenue
-        const byYear = {}; // YYYY -> { MM: Revenue }
-        
-        // 1. 整理月營收數據
-        revenueData.forEach(row => {
-            const yearMonth = row['資料年月']; // 格式: "11411" (民國年YYYYMM)
-            if (!yearMonth) return;
-            const rocYear = yearMonth.substring(0, yearMonth.length - 2);
-            const month = yearMonth.substring(yearMonth.length - 2);
-            const westYear = parseInt(rocYear) + 1911;
-            const key = `${westYear}${month}`;
+    // 如果 t187ap17_L 沒有毛利率，從損益表計算
+    if (Object.keys(result.profitMargin.quarters).length === 0 && !result.profitMargin.year) {
+        incomeData.forEach(row => {
+            const year = row['年度'];
+            const quarter = row['季別'];
             
-            const revenueRaw = row['營業收入-當月營收'];
-            if (!revenueRaw || revenueRaw === '') return;
+            const revenueRaw = row['營業收入'];
+            const grossProfitRaw = row['營業毛利（毛損）淨額'] || row['營業毛利（毛損）'];
+            
+            if (!revenueRaw || !grossProfitRaw) return;
+            
             const revenue = parseFloat(String(revenueRaw).replace(/,/g, ''));
-            if (isNaN(revenue)) return;
-
-            revenueByYearMonth[key] = revenue;
-
-            if (!byYear[westYear]) byYear[westYear] = {};
-            // 月份轉為數字，確保排序正確
-            byYear[westYear][parseInt(month)] = revenue;
-        });
-
-        const sortedMonths = Object.keys(revenueByYearMonth).sort();
-
-        // 2. 計算最新 MoM 增率 (月與上個月比較)
-        if (sortedMonths.length >= 2) {
-            const latestKey = sortedMonths.at(-1);
-            const previousKey = sortedMonths.at(-2);
-            const latestRevenue = revenueByYearMonth[latestKey];
-            const previousRevenue = revenueByYearMonth[previousKey];
+            const grossProfit = parseFloat(String(grossProfitRaw).replace(/,/g, ''));
             
-            if (previousRevenue > 0) {
-                const momGrowth = (latestRevenue - previousRevenue) / previousRevenue * 100;
-                result.revenueGrowth.months.latestMoM = parseFloat(momGrowth.toFixed(2));
-            }
-        }
-        
-        // 3. 計算各季度總營收
-        const quarterRevenues = {};
-        const years = Object.keys(byYear).sort();
-        years.forEach(year => {
-            const months = byYear[year];
-            // 季度營收加總
-            quarterRevenues[`${year}Q1`] = (months[1] || 0) + (months[2] || 0) + (months[3] || 0);
-            quarterRevenues[`${year}Q2`] = (months[4] || 0) + (months[5] || 0) + (months[6] || 0);
-            quarterRevenues[`${year}Q3`] = (months[7] || 0) + (months[8] || 0) + (months[9] || 0);
-            quarterRevenues[`${year}Q4`] = (months[10] || 0) + (months[11] || 0) + (months[12] || 0);
-        });
-
-        // 4. 計算最新 QoQ 增率 (季與上季比較)
-        const sortedQuarterKeys = Object.keys(quarterRevenues).filter(key => quarterRevenues[key] > 0).sort();
-
-        if (sortedQuarterKeys.length >= 2) {
-            const latestQuarterKey = sortedQuarterKeys.at(-1);
-            const prevQuarterKey = sortedQuarterKeys.at(-2);
-            const latestRevenue = quarterRevenues[latestQuarterKey];
-            const prevRevenue = quarterRevenues[prevQuarterKey];
+            if (isNaN(revenue) || isNaN(grossProfit) || revenue === 0) return;
             
-            if (prevRevenue > 0) {
-                const qoqGrowth = (latestRevenue - prevRevenue) / prevRevenue * 100;
-                result.revenueGrowth.quarters.latestQoQ = parseFloat(qoqGrowth.toFixed(2));
+            const margin = (grossProfit / revenue) * 100;
+
+            if (quarter && quarter !== '0') {
+                result.profitMargin.quarters[`Q${quarter}`] = parseFloat(margin.toFixed(2));
+            } else if (quarter === '0') {
+                result.profitMargin.year = parseFloat(margin.toFixed(2));
             }
-        }
-        
-        // 保留原有的年營收成長邏輯 (如果 API 提供年增率數據，可以填入 result.revenueGrowth.year)
+        });
     }
 
-    return { ...result };
+    // === 解析營收成長率 ===
+    if (revenueData.length > 0) {
+        // 月營收增率 - 直接從 API 取得
+        revenueData.forEach(row => {
+            const yearMonth = row['資料年月']; // 格式: "11411" (民國年YYYYMM)
+            const monthGrowthRaw = row['營業收入-去年同月增減(%)'];
+            
+            if (!yearMonth || !monthGrowthRaw || monthGrowthRaw === '') return;
+            
+            const monthGrowth = parseFloat(String(monthGrowthRaw).replace(/,/g, ''));
+            if (!isNaN(monthGrowth)) {
+                result.revenueGrowth.months[yearMonth] = monthGrowth;
+            }
+        });
+
+        // 年營收增率 - 使用「累計營收增減率」
+        const sortedRevenue = [...revenueData].sort((a, b) => 
+            (b['資料年月'] || '').localeCompare(a['資料年月'] || '')
+        );
+        
+        if (sortedRevenue.length > 0) {
+            const latestYearGrowthRaw = sortedRevenue[0]['累計營業收入-前期比較增減(%)'];
+            if (latestYearGrowthRaw && latestYearGrowthRaw !== '') {
+                const latestYearGrowth = parseFloat(String(latestYearGrowthRaw).replace(/,/g, ''));
+                if (!isNaN(latestYearGrowth)) {
+                    result.revenueGrowth.year = latestYearGrowth;
+                }
+            }
+        }
+
+        // 計算季營收成長率
+        result.revenueGrowth.quarters = calculateQuarterlyGrowth(revenueData);
+    }
+
+    return result;
+}
+
+// === 計算季度營收成長率 ===
+function calculateQuarterlyGrowth(revenueData) {
+    const quarters = {};
+    const byYear = {};
+
+    // 按年月分組（資料年月是民國年格式，如 "11411" = 民國114年11月）
+    revenueData.forEach(row => {
+        const ym = row['資料年月'];
+        if (!ym || ym.length < 5) return;
+
+        // 民國年格式：前3碼是年份，後2碼是月份
+        const rocYear = ym.substring(0, 3); // 民國年：如 "114"
+        const month = parseInt(ym.substring(3, 5)); // 月份：如 "11"
+        const westYear = (parseInt(rocYear) + 1911).toString(); // 轉西元年：2025
+        
+        const revenueRaw = row['營業收入-當月營收'];
+        
+        if (!revenueRaw || revenueRaw === '') return;
+        
+        const revenue = parseFloat(String(revenueRaw).replace(/,/g, ''));
+        if (isNaN(revenue)) return;
+
+        if (!byYear[westYear]) byYear[westYear] = {};
+        byYear[westYear][month] = revenue;
+    });
+
+    // 計算各季度總營收
+    const quarterRevenues = {};
+    const years = Object.keys(byYear).sort();
+
+    years.forEach(year => {
+        const months = byYear[year];
+        quarterRevenues[`${year}Q1`] = (months[1] || 0) + (months[2] || 0) + (months[3] || 0);
+        quarterRevenues[`${year}Q2`] = (months[4] || 0) + (months[5] || 0) + (months[6] || 0);
+        quarterRevenues[`${year}Q3`] = (months[7] || 0) + (months[8] || 0) + (months[9] || 0);
+        quarterRevenues[`${year}Q4`] = (months[10] || 0) + (months[11] || 0) + (months[12] || 0);
+    });
+
+    // 計算年增率
+    const growthRates = {};
+    years.forEach((year, idx) => {
+        if (idx === 0) return;
+        const prevYear = years[idx - 1];
+
+        ['Q1', 'Q2', 'Q3', 'Q4'].forEach(q => {
+            const current = quarterRevenues[`${year}${q}`];
+            const previous = quarterRevenues[`${prevYear}${q}`];
+
+            if (current && previous && previous !== 0) {
+                const growth = ((current - previous) / previous) * 100;
+                growthRates[q] = parseFloat(growth.toFixed(2));
+            }
+        });
+    });
+
+    return growthRates;
 }
