@@ -111,15 +111,59 @@ async function getStructuredFinancials(stockId, headers) {
 
         console.log(`找到數據: 損益表 ${allIncome.length}, 資產負債表 ${allBalance.length}, 月營收 ${allRevenue.length}, 營益分析 ${allRatio.length}`);
 
-        // 3. 解析並結構化數據
+        // 3. 如果數據不足，嘗試從其他來源補充
+        if (allIncome.length === 0 || allBalance.length === 0 || allRevenue.length === 0) {
+            console.log('數據不足，嘗試補充數據...');
+            
+            // 補充季度數據
+            try {
+                const quarterlyResponse = await fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci');
+                if (quarterlyResponse.ok) {
+                    const quarterlyData = await quarterlyResponse.json();
+                    const additionalIncome = Array.isArray(quarterlyData) ? quarterlyData.filter(row => row && row['公司代號'] === stockId) : [];
+                    allIncome.push(...additionalIncome);
+                    console.log(`補充損益表數據: ${additionalIncome.length} 筆`);
+                }
+            } catch (e) {
+                console.log('補充季度數據失敗:', e.message);
+            }
+
+            // 補充月營收數據
+            try {
+                const monthlyResponse = await fetch('https://openapi.twse.com.tw/v1/opendata/t187ap05_L');
+                if (monthlyResponse.ok) {
+                    const monthlyData = await monthlyResponse.json();
+                    const additionalRevenue = Array.isArray(monthlyData) ? monthlyData.filter(row => row && row['公司代號'] === stockId) : [];
+                    allRevenue.push(...additionalRevenue);
+                    console.log(`補充月營收數據: ${additionalRevenue.length} 筆`);
+                }
+            } catch (e) {
+                console.log('補充月營收數據失敗:', e.message);
+            }
+        }
+
+        // 4. 解析並結構化數據（所有民國年都會轉換為西元年）
         const result = parseFinancialData(allIncome, allBalance, allRevenue, allRatio);
 
-        // 4. 添加原始數據到結果中，供前端人工計算使用
+        // 5. 添加原始數據到結果中，供前端人工計算使用
         result.rawData = {
             incomeStatements: allIncome,
             balanceSheets: allBalance,
             monthlyRevenues: allRevenue,
             financialRatios: allRatio
+        };
+
+        // 6. 添加數據完整性報告
+        result.dataCompleteness = {
+            incomeStatements: allIncome.length,
+            balanceSheets: allBalance.length,
+            monthlyRevenues: allRevenue.length,
+            financialRatios: allRatio.length,
+            hasEPS: allIncome.some(income => income['基本每股盈餘（元）'] && income['基本每股盈餘（元）'] !== ''),
+            hasNetIncome: allIncome.some(income => income['淨利（淨損）歸屬於母公司業主'] && income['淨利（淨損）歸屬於母公司業主'] !== ''),
+            hasRevenue: allRevenue.length > 0,
+            hasGrowthRates: allRevenue.some(rev => (rev['營業收入-上月比較增減(%)'] && rev['營業收入-上月比較增減(%)'] !== '') || 
+                                                  (rev['營業收入-去年同月增減(%)'] && rev['營業收入-去年同月增減(%)'] !== ''))
         };
 
         return {
@@ -138,7 +182,7 @@ async function getStructuredFinancials(stockId, headers) {
     }
 }
 
-// === 改進的民國年轉換函數 ===
+// === 民國年轉換函數 ===
 function convertRocToWestYear(rocYear) {
     if (!rocYear) return null;
     
@@ -146,16 +190,16 @@ function convertRocToWestYear(rocYear) {
     
     // 處理不同格式的民國年
     if (rocStr.length === 3) {
-        // 完整民國年格式 "113"
+        // 完整民國年格式 "113" -> 轉換為 2024
         const rocNum = parseInt(rocStr);
         return isNaN(rocNum) ? null : rocNum + 1911;
     } else if (rocStr.length === 4 || rocStr.length === 5) {
-        // 年月格式 "11311" 或年度格式 "1130"
+        // 年月格式 "11311" 或年度格式 "1130" -> 提取民國年部分轉換
         const yearPart = rocStr.substring(0, 3);
         const rocNum = parseInt(yearPart);
         return isNaN(rocNum) ? null : rocNum + 1911;
     } else if (rocStr.length === 6) {
-        // 完整年月格式 "1131101"
+        // 完整年月格式 "1131101" -> 提取民國年部分轉換
         const yearPart = rocStr.substring(0, 3);
         const rocNum = parseInt(yearPart);
         return isNaN(rocNum) ? null : rocNum + 1911;
@@ -176,7 +220,7 @@ function convertRocYearMonth(rocYearMonth) {
     
     // 處理不同長度的民國年月格式
     if (cleanStr.length === 5) {
-        // 格式 "11311" (民國113年11月)
+        // 格式 "11311" (民國113年11月) -> 轉換為 "202411"
         const rocYear = parseInt(cleanStr.substring(0, 3));
         const month = cleanStr.substring(3, 5);
         
@@ -193,7 +237,7 @@ function convertRocYearMonth(rocYearMonth) {
             display: `${westYear}-${month}`
         };
     } else if (cleanStr.length === 6) {
-        // 格式 "1131101" (民國113年11月01日)
+        // 格式 "1131101" (民國113年11月01日) -> 轉換為 "202411"
         const rocYear = parseInt(cleanStr.substring(0, 3));
         const month = cleanStr.substring(3, 5);
         
@@ -210,7 +254,7 @@ function convertRocYearMonth(rocYearMonth) {
             display: `${westYear}-${month}`
         };
     } else if (cleanStr.length === 3) {
-        // 只有民國年 "113"，使用當年1月作為預設
+        // 只有民國年 "113" -> 轉換為 "2024" 並使用1月作為預設
         const rocYear = parseInt(cleanStr);
         if (isNaN(rocYear)) return null;
         
@@ -227,7 +271,7 @@ function convertRocYearMonth(rocYearMonth) {
     return null;
 }
 
-// === 改進的數據解析函數 ===
+// === 數據解析函數（確保所有民國年都轉換為西元年）===
 function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
     const result = {
         eps: { quarters: {}, year: null },
@@ -247,133 +291,85 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
             incomeYears: [],
             balanceYears: [],
             revenueMonths: [],
-            ratioYears: [],
-            rawSamples: {
-                income: incomeData.slice(0, 2),
-                balance: balanceData.slice(0, 2),
-                revenue: revenueData.slice(0, 2),
-                ratio: ratioData.slice(0, 2)
-            }
+            ratioYears: []
         }
     };
 
-    console.log('開始解析財務數據，樣本數據:', {
-        incomeSample: incomeData[0],
-        balanceSample: balanceData[0],
-        revenueSample: revenueData[0],
-        ratioSample: ratioData[0]
-    });
+    console.log('開始解析財務數據（所有民國年將轉換為西元年）');
 
-    // === 解析 EPS ===
+    // === 解析 EPS（民國年轉西元年）===
     console.log('開始解析 EPS 數據...');
     incomeData.forEach((row, index) => {
         if (!row) return;
         
-        const rocYear = row['年度'];
+        const rocYear = row['年度']; // 民國年
         const quarter = row['季別'];
         const epsRaw = row['基本每股盈餘（元）'];
         
-        console.log(`EPS 數據 ${index}: 年度=${rocYear}, 季別=${quarter}, EPS原始值=${epsRaw}`);
+        console.log(`EPS 數據 ${index}: 民國年度=${rocYear}, 季別=${quarter}, EPS原始值=${epsRaw}`);
         
         if (!epsRaw || epsRaw === '' || !rocYear || !quarter) {
-            console.log(`EPS 數據 ${index}: 跳過 - 缺少必要字段`);
             return;
         }
         
         const eps = parseFloat(String(epsRaw).replace(/,/g, ''));
-        if (isNaN(eps)) {
-            console.log(`EPS 數據 ${index}: 跳過 - 無法解析數值: ${epsRaw}`);
-            return;
-        }
+        if (isNaN(eps)) return;
 
+        // 民國年轉西元年
         const westYear = convertRocToWestYear(rocYear);
         if (!westYear) {
             console.log(`EPS 數據 ${index}: 跳過 - 無法轉換民國年: ${rocYear}`);
             return;
         }
 
-        const debugInfo = `${rocYear}->${westYear}Q${quarter}`;
-        result._debug.incomeYears.push(debugInfo);
+        console.log(`民國年 ${rocYear} 轉換為西元年 ${westYear}`);
 
-        // 季度處理：'1'=Q1, '2'=Q2, '3'=Q3, '4'=Q4, '0'=年度
+        // 季度處理：使用西元年格式
         if (quarter === '1' || quarter === '2' || quarter === '3' || quarter === '4') {
-            const quarterKey = `${westYear}Q${quarter}`;
+            const quarterKey = `${westYear}Q${quarter}`; // 西元年格式
             result.eps.quarters[quarterKey] = eps;
+            result._debug.incomeYears.push(`${rocYear}->${westYear}Q${quarter}`);
             console.log(`✓ 設置季度 EPS: ${quarterKey} = ${eps}`);
         } else if (quarter === '0') {
             result.eps.year = eps;
+            result._debug.incomeYears.push(`${rocYear}->${westYear}`);
             console.log(`✓ 設置年度 EPS: ${westYear} = ${eps}`);
-        } else {
-            console.log(`EPS 數據 ${index}: 跳過 - 無效季度: ${quarter}`);
         }
     });
 
-    // 如果沒有年度EPS，使用最新季度的平均值
-    if (!result.eps.year && Object.keys(result.eps.quarters).length > 0) {
-        const quarterValues = Object.values(result.eps.quarters);
-        const avgEPS = quarterValues.reduce((sum, val) => sum + val, 0) / quarterValues.length;
-        result.eps.year = parseFloat(avgEPS.toFixed(2));
-        console.log(`使用季度平均值作為年度 EPS: ${result.eps.year}`);
-    }
-
-    // === 解析 ROE (計算：淨利 / 股東權益) ===
+    // === 解析 ROE（民國年轉西元年）===
     console.log('開始解析 ROE 數據...');
     incomeData.forEach((incomeRow, index) => {
         if (!incomeRow) return;
         
-        const rocYear = incomeRow['年度'];
+        const rocYear = incomeRow['年度']; // 民國年
         const quarter = incomeRow['季別'];
         
-        if (!rocYear || !quarter) {
-            console.log(`ROE 數據 ${index}: 跳過 - 缺少年度或季度`);
-            return;
-        }
+        if (!rocYear || !quarter) return;
 
-        // 優先使用「歸屬於母公司業主」的淨利
         let netIncomeRaw = incomeRow['淨利（淨損）歸屬於母公司業主'] || 
-                          incomeRow['本期淨利（淨損）'] ||
-                          incomeRow['繼續營業單位本期淨利（淨損）'];
+                          incomeRow['本期淨利（淨損）'];
         
-        console.log(`ROE 數據 ${index}: 年度=${rocYear}, 季度=${quarter}, 淨利原始值=${netIncomeRaw}`);
-        
-        if (!netIncomeRaw || netIncomeRaw === '') {
-            console.log(`ROE 數據 ${index}: 跳過 - 無淨利數據`);
-            return;
-        }
+        if (!netIncomeRaw || netIncomeRaw === '') return;
         
         const netIncome = parseFloat(String(netIncomeRaw).replace(/,/g, ''));
-        if (isNaN(netIncome)) {
-            console.log(`ROE 數據 ${index}: 跳過 - 無法解析淨利: ${netIncomeRaw}`);
-            return;
-        }
+        if (isNaN(netIncome)) return;
 
+        // 民國年轉西元年
         const westYear = convertRocToWestYear(rocYear);
-        if (!westYear) {
-            console.log(`ROE 數據 ${index}: 跳過 - 無法轉換民國年: ${rocYear}`);
-            return;
-        }
+        if (!westYear) return;
 
         // 找到對應期間的股東權益
         const balanceRow = balanceData.find(b => 
             b && b['年度'] === rocYear && b['季別'] === quarter
         );
 
-        if (!balanceRow) {
-            console.log(`ROE 數據 ${index}: 跳過 - 找不到對應的資產負債表數據`);
-            return;
-        }
+        if (!balanceRow) return;
 
         let equityRaw = balanceRow['權益總額'] || 
-                       balanceRow['歸屬於母公司業主之權益合計'] ||
-                       balanceRow['股東權益總計'] ||
-                       balanceRow['權益總計'];
+                       balanceRow['歸屬於母公司業主之權益合計'];
         
-        console.log(`ROE 數據 ${index}: 權益原始值=${equityRaw}`);
-        
-        if (!equityRaw || equityRaw === '') {
-            console.log(`ROE 數據 ${index}: 跳過 - 無權益數據`);
-            return;
-        }
+        if (!equityRaw || equityRaw === '') return;
         
         const equity = parseFloat(String(equityRaw).replace(/,/g, ''));
 
@@ -381,164 +377,77 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
             const roe = (netIncome / equity) * 100;
             const roeValue = parseFloat(roe.toFixed(2));
 
+            // 使用西元年格式
             if (quarter === '1' || quarter === '2' || quarter === '3' || quarter === '4') {
-                const quarterKey = `${westYear}Q${quarter}`;
+                const quarterKey = `${westYear}Q${quarter}`; // 西元年格式
                 result.roe.quarters[quarterKey] = roeValue;
+                result._debug.balanceYears.push(`${rocYear}->${westYear}Q${quarter}`);
                 console.log(`✓ 設置季度 ROE: ${quarterKey} = ${roeValue}%`);
             } else if (quarter === '0') {
                 result.roe.year = roeValue;
+                result._debug.balanceYears.push(`${rocYear}->${westYear}`);
                 console.log(`✓ 設置年度 ROE: ${westYear} = ${roeValue}%`);
             }
-        } else {
-            console.log(`ROE 數據 ${index}: 跳過 - 權益為零或無效`);
         }
     });
 
-    // 計算年度ROE (季度平均值)
-    const quarterROEs = Object.values(result.roe.quarters).filter(val => !isNaN(val));
-    if (quarterROEs.length > 0 && !result.roe.year) {
-        const avgROE = quarterROEs.reduce((sum, val) => sum + val, 0) / quarterROEs.length;
-        result.roe.year = parseFloat(avgROE.toFixed(2));
-        console.log(`使用季度平均值作為年度 ROE: ${result.roe.year}%`);
-    }
-
-    // === 解析毛利率 ===
+    // === 解析毛利率（民國年轉西元年）===
     console.log('開始解析毛利率數據...');
     
-    // 先從營益分析表獲取
     ratioData.forEach((row, index) => {
         if (!row) return;
         
-        const rocYear = row['年度'];
+        const rocYear = row['年度']; // 民國年
         const quarter = row['季別'];
         const marginRaw = row['毛利率(%)(營業毛利)/(營業收入)'];
         
-        console.log(`毛利率數據 ${index}: 年度=${rocYear}, 季度=${quarter}, 毛利率原始值=${marginRaw}`);
-        
-        if (!marginRaw || marginRaw === '' || !rocYear || !quarter) {
-            console.log(`毛利率數據 ${index}: 跳過 - 缺少必要字段`);
-            return;
-        }
+        if (!marginRaw || marginRaw === '' || !rocYear || !quarter) return;
         
         const margin = parseFloat(String(marginRaw).replace(/,/g, ''));
-        if (isNaN(margin)) {
-            console.log(`毛利率數據 ${index}: 跳過 - 無法解析數值: ${marginRaw}`);
-            return;
-        }
+        if (isNaN(margin)) return;
 
+        // 民國年轉西元年
         const westYear = convertRocToWestYear(rocYear);
-        if (!westYear) {
-            console.log(`毛利率數據 ${index}: 跳過 - 無法轉換民國年: ${rocYear}`);
-            return;
-        }
+        if (!westYear) return;
 
-        const debugInfo = `${rocYear}->${westYear}Q${quarter}`;
-        result._debug.ratioYears.push(debugInfo);
-
+        // 使用西元年格式
         if (quarter === '1' || quarter === '2' || quarter === '3' || quarter === '4') {
-            const quarterKey = `${westYear}Q${quarter}`;
+            const quarterKey = `${westYear}Q${quarter}`; // 西元年格式
             result.profitMargin.quarters[quarterKey] = margin;
+            result._debug.ratioYears.push(`${rocYear}->${westYear}Q${quarter}`);
             console.log(`✓ 設置季度毛利率: ${quarterKey} = ${margin}%`);
         } else if (quarter === '0') {
             result.profitMargin.year = margin;
+            result._debug.ratioYears.push(`${rocYear}->${westYear}`);
             console.log(`✓ 設置年度毛利率: ${westYear} = ${margin}%`);
         }
     });
 
-    // 如果 t187ap17_L 沒有毛利率，從損益表計算
-    if (Object.keys(result.profitMargin.quarters).length === 0 && !result.profitMargin.year) {
-        console.log('從營益分析表未找到毛利率，嘗試從損益表計算...');
-        
-        incomeData.forEach((row, index) => {
-            if (!row) return;
-            
-            const rocYear = row['年度'];
-            const quarter = row['季別'];
-            
-            if (!rocYear || !quarter) return;
-
-            const revenueRaw = row['營業收入'];
-            const grossProfitRaw = row['營業毛利（毛損）淨額'] || row['營業毛利（毛損）'];
-            
-            console.log(`計算毛利率 ${index}: 營業收入=${revenueRaw}, 營業毛利=${grossProfitRaw}`);
-            
-            if (!revenueRaw || !grossProfitRaw) {
-                console.log(`計算毛利率 ${index}: 跳過 - 缺少營業收入或毛利數據`);
-                return;
-            }
-            
-            const revenue = parseFloat(String(revenueRaw).replace(/,/g, ''));
-            const grossProfit = parseFloat(String(grossProfitRaw).replace(/,/g, ''));
-            
-            if (isNaN(revenue) || isNaN(grossProfit) || revenue === 0) {
-                console.log(`計算毛利率 ${index}: 跳過 - 無效的營業收入或毛利`);
-                return;
-            }
-            
-            const margin = (grossProfit / revenue) * 100;
-            const westYear = convertRocToWestYear(rocYear);
-            if (!westYear) return;
-
-            const marginValue = parseFloat(margin.toFixed(2));
-
-            if (quarter === '1' || quarter === '2' || quarter === '3' || quarter === '4') {
-                const quarterKey = `${westYear}Q${quarter}`;
-                result.profitMargin.quarters[quarterKey] = marginValue;
-                console.log(`✓ 計算季度毛利率: ${quarterKey} = ${marginValue}%`);
-            } else if (quarter === '0') {
-                result.profitMargin.year = marginValue;
-                console.log(`✓ 計算年度毛利率: ${westYear} = ${marginValue}%`);
-            }
-        });
-    }
-
-    // 計算年度毛利率 (最新年度值)
-    if (!result.profitMargin.year) {
-        const currentYearKeys = Object.keys(result.profitMargin.quarters)
-            .filter(key => key.match(/^\d{4}Q[1-4]$/))
-            .map(key => parseInt(key.substring(0, 4)));
-        
-        if (currentYearKeys.length > 0) {
-            const currentYear = Math.max(...currentYearKeys);
-            const currentYearMargins = Object.entries(result.profitMargin.quarters)
-                .filter(([key]) => key.startsWith(currentYear.toString()))
-                .map(([_, value]) => value);
-            
-            if (currentYearMargins.length > 0) {
-                // 使用最新年度的最新季度值作為年度參考值
-                result.profitMargin.year = currentYearMargins[currentYearMargins.length - 1];
-                console.log(`使用最新季度作為年度毛利率: ${result.profitMargin.year}%`);
-            }
-        }
-    }
-
-    // === 解析營收成長率 ===
+    // === 解析營收成長率（民國年月轉西元年月）===
     console.log('開始解析營收成長率數據...');
     if (revenueData.length > 0) {
         revenueData.forEach((row, index) => {
             if (!row) return;
             
-            const rocYearMonth = row['資料年月'];
-            const monthGrowthRaw = row['營業收入-上月比較增減(%)']; // 月增率
-            const yearGrowthRaw = row['營業收入-去年同月增減(%)'];  // 年增率
-            const cumulativeGrowthRaw = row['累計營業收入-前期比較增減(%)']; // 累計年增率
+            const rocYearMonth = row['資料年月']; // 民國年月
+            const monthGrowthRaw = row['營業收入-上月比較增減(%)'];
+            const yearGrowthRaw = row['營業收入-去年同月增減(%)'];
+            const cumulativeGrowthRaw = row['累計營業收入-前期比較增減(%)'];
             
-            console.log(`營收數據 ${index}: 年月=${rocYearMonth}, 月增率=${monthGrowthRaw}, 年增率=${yearGrowthRaw}, 累計增率=${cumulativeGrowthRaw}`);
-            
-            if (!rocYearMonth) {
-                console.log(`營收數據 ${index}: 跳過 - 缺少年月`);
+            if (!rocYearMonth) return;
+
+            // 民國年月轉西元年月
+            const converted = convertRocYearMonth(rocYearMonth);
+            if (!converted) {
+                console.log(`營收數據 ${index}: 跳過 - 無法轉換民國年月: ${rocYearMonth}`);
                 return;
             }
 
-            const converted = convertRocYearMonth(rocYearMonth);
-            if (!converted) {
-                console.log(`營收數據 ${index}: 跳過 - 無法轉換年月: ${rocYearMonth}`);
-                return;
-            }
+            console.log(`民國年月 ${rocYearMonth} 轉換為西元年月 ${converted.westYearMonth}`);
 
             result._debug.revenueMonths.push(`${rocYearMonth}->${converted.westYearMonth}`);
 
-            // 月增率
+            // 月增率（使用西元年月格式）
             if (monthGrowthRaw && monthGrowthRaw !== '') {
                 const monthGrowth = parseFloat(String(monthGrowthRaw).replace(/,/g, ''));
                 if (!isNaN(monthGrowth)) {
@@ -547,7 +456,7 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
                 }
             }
 
-            // 年增率
+            // 年增率（使用西元年月格式）
             if (yearGrowthRaw && yearGrowthRaw !== '') {
                 const yearGrowth = parseFloat(String(yearGrowthRaw).replace(/,/g, ''));
                 if (!isNaN(yearGrowth)) {
@@ -556,7 +465,7 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
                 }
             }
 
-            // 累計年增率 (取最新的)
+            // 累計年增率
             if (cumulativeGrowthRaw && cumulativeGrowthRaw !== '' && !result.revenueGrowth.cumulative) {
                 const cumulativeGrowth = parseFloat(String(cumulativeGrowthRaw).replace(/,/g, ''));
                 if (!isNaN(cumulativeGrowth)) {
@@ -566,20 +475,9 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
             }
         });
 
-        // 計算季營收成長率
+        // 計算季營收成長率（使用西元年格式）
         console.log('開始計算季度營收成長率...');
         result.revenueGrowth.quarters = calculateQuarterlyGrowth(revenueData);
-    } else {
-        console.log('無營收數據可用');
-    }
-
-    // 如果沒有累計年增率，使用最新年增率
-    if (!result.revenueGrowth.cumulative && Object.keys(result.revenueGrowth.yearOverYear).length > 0) {
-        const latestYearGrowth = Object.values(result.revenueGrowth.yearOverYear).pop();
-        if (latestYearGrowth) {
-            result.revenueGrowth.cumulative = latestYearGrowth;
-            console.log(`使用最新年增率作為累計年增率: ${latestYearGrowth}%`);
-        }
     }
 
     // 清理調試信息中的重複項
@@ -588,95 +486,66 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
     result._debug.revenueMonths = [...new Set(result._debug.revenueMonths)];
     result._debug.ratioYears = [...new Set(result._debug.ratioYears)];
 
-    console.log('解析完成結果:', {
-        eps: result.eps,
-        roe: result.roe,
-        revenueGrowth: {
-            monthOverMonth: Object.keys(result.revenueGrowth.monthOverMonth).length,
-            yearOverYear: Object.keys(result.revenueGrowth.yearOverYear).length,
-            quarters: Object.keys(result.revenueGrowth.quarters).length,
-            cumulative: result.revenueGrowth.cumulative
-        },
-        profitMargin: result.profitMargin
-    });
+    console.log('解析完成結果（所有日期已轉換為西元年）:');
+    console.log('- EPS 季度:', result.eps.quarters);
+    console.log('- ROE 季度:', result.roe.quarters);
+    console.log('- 毛利率季度:', result.profitMargin.quarters);
 
     return result;
 }
 
-// === 計算季度營收成長率 ===
+// === 計算季度營收成長率（確保使用西元年格式）===
 function calculateQuarterlyGrowth(revenueData) {
     const growthRates = {};
     const byYearQuarter = {};
 
-    console.log('開始計算季度營收成長率，數據量:', revenueData.length);
+    console.log('開始計算季度營收成長率（使用西元年格式）');
 
-    // 按年月分組（資料年月是民國年格式）
+    // 按年月分組（民國年月轉西元年月）
     revenueData.forEach((row, index) => {
         if (!row) return;
         
-        const rocYearMonth = row['資料年月'];
-        if (!rocYearMonth || rocYearMonth.length < 5) {
-            console.log(`季度計算 ${index}: 跳過 - 無效年月: ${rocYearMonth}`);
-            return;
-        }
+        const rocYearMonth = row['資料年月']; // 民國年月
+        if (!rocYearMonth || rocYearMonth.length < 5) return;
 
+        // 民國年月轉西元年月
         const converted = convertRocYearMonth(rocYearMonth);
-        if (!converted) {
-            console.log(`季度計算 ${index}: 跳過 - 無法轉換年月: ${rocYearMonth}`);
-            return;
-        }
+        if (!converted) return;
 
         const month = parseInt(converted.month);
-        const westYear = converted.westYear;
+        const westYear = converted.westYear; // 西元年
         
         const revenueRaw = row['營業收入-當月營收'];
-        
-        if (!revenueRaw || revenueRaw === '') {
-            console.log(`季度計算 ${index}: 跳過 - 無營收數據`);
-            return;
-        }
+        if (!revenueRaw || revenueRaw === '') return;
         
         const revenue = parseFloat(String(revenueRaw).replace(/,/g, ''));
-        if (isNaN(revenue)) {
-            console.log(`季度計算 ${index}: 跳過 - 無法解析營收: ${revenueRaw}`);
-            return;
-        }
+        if (isNaN(revenue)) return;
 
-        // 確定季度
+        // 確定季度（使用西元年）
         let quarter;
         if (month >= 1 && month <= 3) quarter = 'Q1';
         else if (month >= 4 && month <= 6) quarter = 'Q2';
         else if (month >= 7 && month <= 9) quarter = 'Q3';
         else if (month >= 10 && month <= 12) quarter = 'Q4';
-        else {
-            console.log(`季度計算 ${index}: 跳過 - 無效月份: ${month}`);
-            return;
-        }
+        else return;
 
-        const key = `${westYear}${quarter}`;
+        const key = `${westYear}${quarter}`; // 西元年格式
         if (!byYearQuarter[key]) byYearQuarter[key] = 0;
         byYearQuarter[key] += revenue;
-        
-        console.log(`季度計算 ${index}: ${converted.display} -> ${key}, 營收: ${revenue}`);
     });
 
-    console.log('季度營收匯總:', byYearQuarter);
-
-    // 計算季增率 (本季 vs 上季)
+    // 計算季增率（使用西元年格式）
     const quarters = Object.keys(byYearQuarter).sort();
-    console.log('排序後的季度:', quarters);
     
     for (let i = 1; i < quarters.length; i++) {
-        const currentQuarter = quarters[i];
-        const previousQuarter = quarters[i - 1];
+        const currentQuarter = quarters[i]; // 西元年格式
+        const previousQuarter = quarters[i - 1]; // 西元年格式
         
-        // 確保是相鄰季度 (同一年或相鄰年)
         const currentYear = parseInt(currentQuarter.substring(0, 4));
         const prevYear = parseInt(previousQuarter.substring(0, 4));
         const currentQ = currentQuarter.substring(4);
         const prevQ = previousQuarter.substring(4);
         
-        // 檢查是否為相鄰季度 (Q1->Q2, Q2->Q3, Q3->Q4, Q4->Q1[隔年])
         const isConsecutive = 
             (currentYear === prevYear && 
              ((prevQ === 'Q1' && currentQ === 'Q2') ||
@@ -684,24 +553,17 @@ function calculateQuarterlyGrowth(revenueData) {
               (prevQ === 'Q3' && currentQ === 'Q4'))) ||
             (currentYear === prevYear + 1 && prevQ === 'Q4' && currentQ === 'Q1');
         
-        console.log(`季度比較: ${previousQuarter} -> ${currentQuarter}, 連續: ${isConsecutive}`);
-        
         if (isConsecutive) {
             const currentRevenue = byYearQuarter[currentQuarter];
             const previousRevenue = byYearQuarter[previousQuarter];
             
             if (previousRevenue !== 0) {
                 const growth = ((currentRevenue - previousRevenue) / previousRevenue) * 100;
-                growthRates[currentQuarter] = parseFloat(growth.toFixed(2));
+                growthRates[currentQuarter] = parseFloat(growth.toFixed(2)); // 西元年格式
                 console.log(`✓ 計算季增率: ${currentQuarter} = ${growthRates[currentQuarter]}%`);
-            } else {
-                console.log(`季度比較: 跳過 - 上季營收為零`);
             }
-        } else {
-            console.log(`季度比較: 跳過 - 季度不連續`);
         }
     }
 
-    console.log('最終季度成長率:', growthRates);
     return growthRates;
 }
