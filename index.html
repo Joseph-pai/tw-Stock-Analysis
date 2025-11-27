@@ -299,7 +299,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
- async function fetchFinmindFinancials(stockId) {
+async function fetchFinmindFinancials(stockId) {
     try {
         log(`🔍 FinMind 數據獲取開始: ${stockId}`);
         
@@ -334,6 +334,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 byDate[item.date]['_origin'][item.type] = item.origin_name;
             });
 
+            // 按季度分組數據（確保 Q1-Q4 順序）
+            const byQuarter = {};
+            
             // 處理每個日期的數據
             const dates = Object.keys(byDate).sort().reverse(); // 從最新到最舊
             
@@ -343,6 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const year = dateObj.getFullYear();
                 const month = dateObj.getMonth() + 1;
                 const quarter = Math.floor((month + 2) / 3);
+                const quarterKey = `${year}Q${quarter}`;
                 
                 log(`📅 處理 ${date} (Q${quarter}) 數據:`);
 
@@ -350,8 +354,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.EPS !== undefined) {
                     const eps = parseFloat(data.EPS);
                     if (!isNaN(eps)) {
-                        financialCache.eps.quarters[`Q${quarter}`] = eps;
-                        log(`  ✅ EPS Q${quarter}: ${eps}`);
+                        if (!byQuarter[quarterKey]) byQuarter[quarterKey] = {};
+                        byQuarter[quarterKey].eps = eps;
+                        byQuarter[quarterKey].date = date;
                         
                         if (!financialCache.eps.year || dateObj > new Date(financialCache.eps._latestDate || 0)) {
                             financialCache.eps.year = eps;
@@ -369,8 +374,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         const grossProfit = revenue - cost;
                         const margin = (grossProfit / revenue) * 100;
                         
-                        financialCache.profitMargin.quarters[`Q${quarter}`] = parseFloat(margin.toFixed(2));
-                        log(`  ✅ 毛利率 Q${quarter}: ${margin.toFixed(2)}% (營收: ${revenue}, 成本: ${cost})`);
+                        if (!byQuarter[quarterKey]) byQuarter[quarterKey] = {};
+                        byQuarter[quarterKey].profitMargin = parseFloat(margin.toFixed(2));
                         
                         if (!financialCache.profitMargin.year || dateObj > new Date(financialCache.profitMargin._latestDate || 0)) {
                             financialCache.profitMargin.year = parseFloat(margin.toFixed(2));
@@ -379,36 +384,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
-                // 3. 計算 ROE (需要淨利和股東權益)
+                // 3. 計算 ROE
                 if (data.IncomeAfterTaxes !== undefined) {
                     const netIncome = parseFloat(data.IncomeAfterTaxes);
-                    
-                    // 嘗試從資產負債表獲取股東權益
-                    if (balanceSheet?.data) {
-                        const balanceItem = balanceSheet.data.find(b => b.date === date);
-                        if (balanceItem) {
-                            // 嘗試不同的股東權益字段名稱
-                            const equity = parseFloat(balanceItem.equity || balanceItem.total_equity || 
-                                                   balanceItem['權益總計'] || balanceItem['權益總額']);
-                            
-                            if (!isNaN(equity) && equity > 0 && !isNaN(netIncome)) {
-                                const roe = (netIncome / equity) * 100;
-                                
-                                financialCache.roe.quarters[`Q${quarter}`] = parseFloat(roe.toFixed(2));
-                                log(`  ✅ ROE Q${quarter}: ${roe.toFixed(2)}% (淨利: ${netIncome}, 權益: ${equity})`);
-                                
-                                if (!financialCache.roe.year || dateObj > new Date(financialCache.roe._latestDate || 0)) {
-                                    financialCache.roe.year = parseFloat(roe.toFixed(2));
-                                    financialCache.roe._latestDate = date;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 4. 如果沒有 IncomeAfterTaxes，嘗試其他淨利字段
-                if (data.IncomeAfterTaxes === undefined && data.TotalConsolidatedProfitForThePeriod !== undefined) {
-                    const netIncome = parseFloat(data.TotalConsolidatedProfitForThePeriod);
                     
                     if (balanceSheet?.data && !isNaN(netIncome)) {
                         const balanceItem = balanceSheet.data.find(b => b.date === date);
@@ -419,8 +397,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (!isNaN(equity) && equity > 0) {
                                 const roe = (netIncome / equity) * 100;
                                 
-                                financialCache.roe.quarters[`Q${quarter}`] = parseFloat(roe.toFixed(2));
-                                log(`  ✅ ROE Q${quarter}: ${roe.toFixed(2)}% (使用 TotalConsolidatedProfit)`);
+                                if (!byQuarter[quarterKey]) byQuarter[quarterKey] = {};
+                                byQuarter[quarterKey].roe = parseFloat(roe.toFixed(2));
                                 
                                 if (!financialCache.roe.year || dateObj > new Date(financialCache.roe._latestDate || 0)) {
                                     financialCache.roe.year = parseFloat(roe.toFixed(2));
@@ -432,35 +410,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // 如果還是沒有 ROE 數據，嘗試使用 OperatingIncome 和 Revenue 估算
-            if (Object.keys(financialCache.roe.quarters).length === 0) {
-                log(`🔄 嘗試估算 ROE 數據...`);
-                dates.forEach(date => {
-                    const data = byDate[date];
-                    const dateObj = new Date(date);
-                    const month = dateObj.getMonth() + 1;
-                    const quarter = Math.floor((month + 2) / 3);
-                    
-                    if (data.OperatingIncome !== undefined && data.Revenue !== undefined) {
-                        const operatingIncome = parseFloat(data.OperatingIncome);
-                        const revenue = parseFloat(data.Revenue);
-                        
-                        if (!isNaN(operatingIncome) && !isNaN(revenue) && revenue > 0) {
-                            // 簡單估算：營業利益率 * 2 (粗略估算 ROE)
-                            const operatingMargin = (operatingIncome / revenue) * 100;
-                            const estimatedROE = operatingMargin * 2; // 簡化估算
-                            
-                            financialCache.roe.quarters[`Q${quarter}`] = parseFloat(estimatedROE.toFixed(2));
-                            log(`  ✅ 估算 ROE Q${quarter}: ${estimatedROE.toFixed(2)}%`);
-                            
-                            if (!financialCache.roe.year || dateObj > new Date(financialCache.roe._latestDate || 0)) {
-                                financialCache.roe.year = parseFloat(estimatedROE.toFixed(2));
-                                financialCache.roe._latestDate = date;
-                            }
-                        }
-                    }
-                });
-            }
+            // 按正確的季度順序 (Q1, Q2, Q3, Q4) 組織數據
+            const quarterKeys = Object.keys(byQuarter).sort().reverse(); // 從最新到最舊
+            
+            // 只取最近4個季度
+            const recentQuarters = quarterKeys.slice(0, 4);
+            
+            // 按 Q1, Q2, Q3, Q4 順序重新排列
+            const sortedQuarters = recentQuarters.sort((a, b) => {
+                const [yearA, quarterA] = a.split('Q');
+                const [yearB, quarterB] = b.split('Q');
+                
+                if (yearA !== yearB) return yearB - yearA; // 年份新的在前
+                return quarterA - quarterB; // 季度小的在前 (Q1, Q2, Q3, Q4)
+            });
+            
+            log(`🔄 按季度順序組織數據: ${sortedQuarters.join(', ')}`);
+            
+            // 將數據填入 financialCache
+            sortedQuarters.forEach(quarterKey => {
+                const data = byQuarter[quarterKey];
+                const quarterNum = quarterKey.split('Q')[1];
+                
+                if (data.eps !== undefined) {
+                    financialCache.eps.quarters[`Q${quarterNum}`] = data.eps;
+                    log(`  ✅ EPS Q${quarterNum}: ${data.eps}`);
+                }
+                
+                if (data.profitMargin !== undefined) {
+                    financialCache.profitMargin.quarters[`Q${quarterNum}`] = data.profitMargin;
+                    log(`  ✅ 毛利率 Q${quarterNum}: ${data.profitMargin}%`);
+                }
+                
+                if (data.roe !== undefined) {
+                    financialCache.roe.quarters[`Q${quarterNum}`] = data.roe;
+                    log(`  ✅ ROE Q${quarterNum}: ${data.roe}%`);
+                }
+            });
         }
 
         // 處理營收成長率
@@ -468,23 +454,35 @@ document.addEventListener('DOMContentLoaded', () => {
             log(`🔄 處理營收成長率數據...`);
             const sortedRevenue = revenueData.data.sort((a, b) => new Date(b.date) - new Date(a.date));
             
-            // 月度營收成長率
-            sortedRevenue.slice(0, 12).forEach(item => {
-                const date = new Date(item.date);
-                const year = date.getFullYear();
-                const month = date.getMonth() + 1;
-                const rocYear = (year - 1911).toString();
-                const monthKey = `${rocYear}${month.toString().padStart(2, '0')}`;
+            // 月度營收成長率 - 計算月增率 (本月 vs 上月)
+            if (sortedRevenue.length >= 2) {
+                log(`📈 計算月度營收成長率...`);
                 
-                const revenue = parseFloat(item.revenue);
-                const lastYearRevenue = parseFloat(item.revenue_last_year);
-                
-                if (!isNaN(revenue) && !isNaN(lastYearRevenue) && lastYearRevenue > 0) {
-                    const growth = ((revenue - lastYearRevenue) / lastYearRevenue) * 100;
-                    financialCache.revenueGrowth.months[monthKey] = parseFloat(growth.toFixed(2));
-                    log(`  ✅ 月營收成長 ${monthKey}: ${growth.toFixed(2)}%`);
+                for (let i = 0; i < sortedRevenue.length - 1; i++) {
+                    const currentMonth = sortedRevenue[i];
+                    const previousMonth = sortedRevenue[i + 1];
+                    
+                    const currentRevenue = parseFloat(currentMonth.revenue);
+                    const previousRevenue = parseFloat(previousMonth.revenue);
+                    
+                    if (!isNaN(currentRevenue) && !isNaN(previousRevenue) && previousRevenue > 0) {
+                        const date = new Date(currentMonth.date);
+                        const year = date.getFullYear();
+                        const month = date.getMonth() + 1;
+                        const rocYear = (year - 1911).toString();
+                        const monthKey = `${rocYear}${month.toString().padStart(2, '0')}`;
+                        
+                        // 計算月增率: (本月營收 - 上月營收) / 上月營收 * 100
+                        const monthGrowth = ((currentRevenue - previousRevenue) / previousRevenue) * 100;
+                        
+                        financialCache.revenueGrowth.months[monthKey] = parseFloat(monthGrowth.toFixed(2));
+                        log(`  ✅ 月營收成長 ${monthKey}: ${monthGrowth.toFixed(2)}% (${currentRevenue} vs ${previousRevenue})`);
+                        
+                        // 只保留最近12個月
+                        if (Object.keys(financialCache.revenueGrowth.months).length >= 12) break;
+                    }
                 }
-            });
+            }
 
             // 計算季度營收成長率
             const quarters = {};
@@ -498,7 +496,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 quarters[key] += parseFloat(item.revenue) || 0;
             });
 
-            // 計算季度成長率
+            // 計算季度成長率 (與去年同期比較)
             const quarterKeys = Object.keys(quarters).sort().slice(-8);
             for (let i = 4; i < quarterKeys.length; i++) {
                 const current = quarters[quarterKeys[i]];
