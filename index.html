@@ -510,16 +510,19 @@ document.getElementById('testConnectionBtn').addEventListener('click', async fun
         log(`測試 ${currentAiPlatform} API 連線...`);
         
         // 使用簡單測試函數，不依賴股票代碼
-        const response = await fetch('/.netlify/functions/simple-deepseek', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                apiKey: currentAiApiKey,
-                platform: currentAiPlatform  // 添加平台參數
-            })
-        });
+       const response = await fetch('/.netlify/functions/structured-analyze', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+        stockId: symbol,
+        stockName: stockName,
+        apiKey: currentAiApiKey,
+        analysisType: analysisType,
+        platform: currentAiPlatform  // 確保傳遞正確的平台參數
+    })
+});
 
         const result = await response.json();
         
@@ -618,98 +621,101 @@ document.getElementById('testConnectionBtn').addEventListener('click', async fun
 
     // 改進的 AI 分析錯誤處理
     // AI分析按鈕 - 使用結構化分析
-    document.getElementById('aiAnalyzeBtn').addEventListener('click', async function() {
-        const symbol = document.getElementById('stockSelect').value.trim();
-        if (!symbol) {
-            alert('請先選擇股票');
-            return;
-        }
+// 在 AI 分析按鈕的點擊事件中，添加平台檢查
+document.getElementById('aiAnalyzeBtn').addEventListener('click', async function() {
+    const symbol = document.getElementById('stockSelect').value.trim();
+    if (!symbol) {
+        alert('請先選擇股票');
+        return;
+    }
 
-        if (!currentAiApiKey) {
-            alert('請先輸入 API Key');
-            return;
-        }
+    if (!currentAiApiKey) {
+        alert('請先輸入 API Key');
+        return;
+    }
 
-        const analysisType = document.querySelector('input[name="analysisType"]:checked').value;
-        const analyzeBtn = this;
-        const spinner = document.getElementById('aiSpinner');
+    const analysisType = document.querySelector('input[name="analysisType"]:checked').value;
+    const analyzeBtn = this;
+    const spinner = document.getElementById('aiSpinner');
+    
+    analyzeBtn.disabled = true;
+    spinner.style.display = 'inline-block';
+    
+    // 顯示當前使用的平台
+    document.getElementById('aiKeyStatus').innerHTML = 
+        `<span class="badge bg-info">🔄 ${currentAiPlatform} 分析中... (約20秒)</span>`;
+    
+    try {
+        log(`開始 ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析: ${symbol}, 平台: ${currentAiPlatform}`);
         
-        analyzeBtn.disabled = true;
-        spinner.style.display = 'inline-block';
+        const stockName = stockData.find(s => s.stock_id === symbol)?.stock_name || symbol;
+        
+        // 使用結構化分析函數，傳遞平台參數
+        const response = await fetch('/.netlify/functions/structured-analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                stockId: symbol,
+                stockName: stockName,
+                apiKey: currentAiApiKey,
+                analysisType: analysisType,
+                platform: currentAiPlatform  // 確保傳遞平台參數
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `HTTP ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        if (result.error) {
+            throw new Error(result.error);
+        }
+
+        // 顯示結構化結果
+        document.getElementById('aiAnalysisContent').textContent = result.content;
+        document.getElementById('aiScoreDisplay').textContent = 
+            result.score > 0 ? `+${result.score}` : result.score;
+        document.getElementById('aiComment').textContent = result.comment;
+        
+        // 更新評分顯示
+        const scoreDisplay = document.getElementById('aiScoreDisplay');
+        scoreDisplay.className = 'fs-1 fw-bold ' + 
+            (result.score > 0 ? 'text-success' : 
+             result.score < 0 ? 'text-danger' : 'text-warning');
+        
+        document.getElementById('aiAnalysisResult').style.display = 'block';
+        
+        // 顯示評分明細
+        displayScoreDetails(analysisType, result.content, result.score, stockName);
+        
+        // 保存分析歷史
+        saveAnalysisHistory(analysisType, result, stockName);
+        
+        // 自動應用評分
+        if (document.getElementById('autoApplyScore').checked) {
+            applyAiScoreToSystem(result.score, analysisType);
+        }
         
         document.getElementById('aiKeyStatus').innerHTML = 
-            '<span class="badge bg-info">🔄 分析中... (約20秒)</span>';
+            `<span class="badge bg-success">✓ ${currentAiPlatform} 分析完成</span>`;
         
-        try {
-            log(`開始 ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析: ${symbol}`);
-            
-            const stockName = stockData.find(s => s.stock_id === symbol)?.stock_name || symbol;
-            
-            // 使用結構化分析函數
-            const response = await fetch('/.netlify/functions/structured-analyze', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    stockId: symbol,
-                    stockName: stockName,
-                    apiKey: currentAiApiKey,
-                    analysisType: analysisType
-                })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `HTTP ${response.status}`);
-            }
-
-            const result = await response.json();
-            
-            if (result.error) {
-                throw new Error(result.error);
-            }
-
-            // 顯示結構化結果
-            document.getElementById('aiAnalysisContent').textContent = result.content;
-            document.getElementById('aiScoreDisplay').textContent = 
-                result.score > 0 ? `+${result.score}` : result.score;
-            document.getElementById('aiComment').textContent = result.comment;
-            
-            // 更新評分顯示
-            const scoreDisplay = document.getElementById('aiScoreDisplay');
-            scoreDisplay.className = 'fs-1 fw-bold ' + 
-                (result.score > 0 ? 'text-success' : 
-                 result.score < 0 ? 'text-danger' : 'text-warning');
-            
-            document.getElementById('aiAnalysisResult').style.display = 'block';
-            
-            // 顯示評分明細
-            displayScoreDetails(analysisType, result.content, result.score, stockName);
-            
-            // 保存分析歷史
-            saveAnalysisHistory(analysisType, result, stockName);
-            
-            // 自動應用評分
-            if (document.getElementById('autoApplyScore').checked) {
-                applyAiScoreToSystem(result.score, analysisType);
-            }
-            
-            document.getElementById('aiKeyStatus').innerHTML = 
-                '<span class="badge bg-success">✓ 分析完成</span>';
-            
-            log(`✅ ${analysisType === 'news' ? '消息面' : '風險面'} AI分析完成，評分: ${result.score}`);
-            
-        } catch (error) {
-            document.getElementById('aiKeyStatus').innerHTML = 
-                `<span class="badge bg-danger">✗ 分析失敗</span>`;
-            log(`❌ AI分析失敗: ${error.message}`);
-            alert(`分析失敗: ${error.message}`);
-        } finally {
-            analyzeBtn.disabled = false;
-            spinner.style.display = 'none';
-        }
-    });
+        log(`✅ ${currentAiPlatform} ${analysisType === 'news' ? '消息面' : '風險面'} AI分析完成，評分: ${result.score}`);
+        
+    } catch (error) {
+        document.getElementById('aiKeyStatus').innerHTML = 
+            `<span class="badge bg-danger">✗ ${currentAiPlatform} 分析失敗</span>`;
+        log(`❌ ${currentAiPlatform} AI分析失敗: ${error.message}`);
+        alert(`${currentAiPlatform} 分析失敗: ${error.message}`);
+    } finally {
+        analyzeBtn.disabled = false;
+        spinner.style.display = 'none';
+    }
+});
 
     // 應用評分到系統
     document.getElementById('applyAiScore').addEventListener('click', function() {
