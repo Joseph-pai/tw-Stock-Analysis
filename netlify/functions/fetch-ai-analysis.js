@@ -14,17 +14,28 @@ exports.handler = async function(event, context) {
     };
   }
 
-  const { stockId, stockName, platform, apiKey, analysisType } = JSON.parse(event.body || '{}');
-  
-  if (!stockId || !platform || !apiKey) {
+  // 只允許 POST 請求
+  if (event.httpMethod !== 'POST') {
     return {
-      statusCode: 400,
+      statusCode: 405,
       headers: { 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ error: '缺少必要參數' })
+      body: JSON.stringify({ error: 'Method not allowed' })
     };
   }
 
   try {
+    const { stockId, stockName, platform, apiKey, analysisType } = JSON.parse(event.body || '{}');
+    
+    if (!stockId || !platform || !apiKey) {
+      return {
+        statusCode: 400,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+        body: JSON.stringify({ error: '缺少必要參數: stockId, platform, apiKey' })
+      };
+    }
+
+    console.log(`AI分析請求: ${stockId} ${stockName}, 平台: ${platform}, 類型: ${analysisType}`);
+
     let analysisResult;
     
     switch (platform) {
@@ -95,7 +106,8 @@ async function analyzeWithDeepSeek(stockId, stockName, apiKey, analysisType) {
   });
 
   if (!response.ok) {
-    throw new Error(`DeepSeek API 錯誤: ${response.status}`);
+    const errorText = await response.text();
+    throw new Error(`DeepSeek API 錯誤: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
@@ -128,7 +140,8 @@ async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
   });
 
   if (!response.ok) {
-    throw new Error(`GPT API 錯誤: ${response.status}`);
+    const errorText = await response.text();
+    throw new Error(`GPT API 錯誤: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
@@ -160,7 +173,8 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   });
 
   if (!response.ok) {
-    throw new Error(`Gemini API 錯誤: ${response.status}`);
+    const errorText = await response.text();
+    throw new Error(`Gemini API 錯誤: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
@@ -192,7 +206,8 @@ async function analyzeWithClaude(stockId, stockName, apiKey, analysisType) {
   });
 
   if (!response.ok) {
-    throw new Error(`Claude API 錯誤: ${response.status}`);
+    const errorText = await response.text();
+    throw new Error(`Claude API 錯誤: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
@@ -225,7 +240,8 @@ async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
   });
 
   if (!response.ok) {
-    throw new Error(`Grok API 錯誤: ${response.status}`);
+    const errorText = await response.text();
+    throw new Error(`Grok API 錯誤: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
@@ -236,7 +252,7 @@ async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
 function createNewsAnalysisPrompt(stockId, stockName) {
   return `請分析台灣股票 ${stockId} ${stockName} 的最新市場消息面和新聞資訊面。
 
-請按照以下結構提供分析結果，使用純文本格式，不要使用Markdown：
+請按照以下結構提供分析結果：
 
 正面因素 (利多):
 1. [具體的正面因素1，包含詳細說明和分析]
@@ -261,7 +277,7 @@ function createNewsAnalysisPrompt(stockId, stockName) {
 function createRiskAnalysisPrompt(stockId, stockName) {
   return `請分析台灣股票 ${stockId} ${stockName} 的風險面因素。
 
-請按照以下結構提供分析結果，使用純文本格式，不要使用Markdown：
+請按照以下結構提供分析結果：
 
 負面風險因素 (扣分):
 1. [具體的風險因素1，包含風險強度和詳細分析]
@@ -285,13 +301,15 @@ function createRiskAnalysisPrompt(stockId, stockName) {
 // 解析AI回應
 function parseAIResponse(content, analysisType) {
   try {
+    console.log(`原始AI回應: ${content.substring(0, 200)}...`);
+
     // 提取最終評分
     const scoreMatch = content.match(/最終評分:\s*([+-]?\d+)/);
     const score = scoreMatch ? parseInt(scoreMatch[1]) : 0;
 
     // 提取評語
     const commentMatch = content.match(/評語:\s*(.+?)(?=\n|$)/);
-    const comment = commentMatch ? commentMatch[1].trim() : '';
+    const comment = commentMatch ? commentMatch[1].trim() : '分析完成';
 
     return {
       success: true,
@@ -301,6 +319,7 @@ function parseAIResponse(content, analysisType) {
       analysisType: analysisType
     };
   } catch (error) {
+    console.error('解析AI回應錯誤:', error);
     return {
       success: true,
       content: content,
