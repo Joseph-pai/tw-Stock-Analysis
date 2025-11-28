@@ -113,7 +113,7 @@ exports.handler = async function(event, context) {
   }
 };
 
-// DeepSeek 分析函數 - 修復版本
+// DeepSeek 分析函數
 async function analyzeWithDeepSeek(stockId, stockName, apiKey, analysisType) {
   const prompt = analysisType === 'news' 
     ? createNewsAnalysisPrompt(stockId, stockName)
@@ -200,24 +200,230 @@ async function analyzeWithDeepSeek(stockId, stockName, apiKey, analysisType) {
   }
 }
 
-// 其他平台的函數保持不變，但先註釋掉，專注修復DeepSeek
+// GPT 分析函數
 async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
-  throw new Error('GPT功能暫未開放');
+  const prompt = analysisType === 'news' 
+    ? createNewsAnalysisPrompt(stockId, stockName)
+    : createRiskAnalysisPrompt(stockId, stockName);
+
+  console.log('發送請求到 OpenAI API...');
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+        stream: false
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`OpenAI API錯誤: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
+    }
+
+    const data = await response.json();
+    console.log('OpenAI API 響應接收成功');
+    return parseAIResponse(data.choices[0].message.content, analysisType);
+    
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('OpenAI API 請求超時');
+    }
+    throw error;
+  }
 }
 
+// Gemini 分析函數
 async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
-  throw new Error('Gemini功能暫未開放');
+  const prompt = analysisType === 'news' 
+    ? createNewsAnalysisPrompt(stockId, stockName)
+    : createRiskAnalysisPrompt(stockId, stockName);
+
+  console.log('發送請求到 Gemini API...');
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 2000
+        }
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Gemini API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+
+    const data = await response.json();
+    console.log('Gemini API 響應接收成功');
+    
+    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+      throw new Error('Gemini API 返回數據格式錯誤');
+    }
+    
+    const content = data.candidates[0].content.parts[0].text;
+    return parseAIResponse(content, analysisType);
+    
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Gemini API 請求超時');
+    }
+    throw error;
+  }
 }
 
+// Claude 分析函數
 async function analyzeWithClaude(stockId, stockName, apiKey, analysisType) {
-  throw new Error('Claude功能暫未開放');
+  const prompt = analysisType === 'news' 
+    ? createNewsAnalysisPrompt(stockId, stockName)
+    : createRiskAnalysisPrompt(stockId, stockName);
+
+  console.log('發送請求到 Claude API...');
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-3-sonnet-20240229',
+        max_tokens: 2000,
+        temperature: 0.7,
+        messages: [{
+          role: 'user',
+          content: prompt
+        }]
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Claude API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+
+    const data = await response.json();
+    console.log('Claude API 響應接收成功');
+    
+    if (!data.content || !data.content[0] || !data.content[0].text) {
+      throw new Error('Claude API 返回數據格式錯誤');
+    }
+    
+    const content = data.content[0].text;
+    return parseAIResponse(content, analysisType);
+    
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Claude API 請求超時');
+    }
+    throw error;
+  }
 }
 
+// Grok 分析函數
 async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
-  throw new Error('Grok功能暫未開放');
+  const prompt = analysisType === 'news' 
+    ? createNewsAnalysisPrompt(stockId, stockName)
+    : createRiskAnalysisPrompt(stockId, stockName);
+
+  console.log('發送請求到 Grok API...');
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'grok-beta',
+        messages: [{
+          role: 'user',
+          content: prompt
+        }],
+        temperature: 0.7,
+        max_tokens: 2000,
+        stream: false
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Grok API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+
+    const data = await response.json();
+    console.log('Grok API 響應接收成功');
+    
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      throw new Error('Grok API 返回數據格式錯誤');
+    }
+    
+    return parseAIResponse(data.choices[0].message.content, analysisType);
+    
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Grok API 請求超時');
+    }
+    throw error;
+  }
 }
 
-// 提示詞函數保持不變
+// 提示詞函數
 function createNewsAnalysisPrompt(stockId, stockName) {
   return `請分析台灣股票 ${stockId} ${stockName} 的最新市場消息面和新聞資訊面。
 
@@ -262,7 +468,7 @@ function createRiskAnalysisPrompt(stockId, stockName) {
 請從多個維度進行全面分析。`;
 }
 
-// 解析AI回應函數保持不變
+// 解析AI回應函數
 function parseAIResponse(content, analysisType) {
   try {
     console.log('解析AI回應，內容長度:', content.length);
