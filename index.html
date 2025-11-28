@@ -109,56 +109,74 @@
         </div>
     </div>
 
-    <!-- AI 分析功能區域 -->
-    <div class="row justify-content-center mb-4">
-        <div class="col-md-12">
-            <div class="card text-dark">
-                <div class="card-header bg-info text-white">
-                    <strong>🔍 消息面與風險分析AI助手</strong>
+<!-- AI 分析功能區域 -->
+<div class="row justify-content-center mb-4">
+    <div class="col-md-12">
+        <div class="card text-dark">
+            <div class="card-header bg-info text-white">
+                <strong>🔍 消息面與風險分析AI助手</strong>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 align-items-center">
+                    <div class="col-md-3">
+                        <label class="form-label">AI平台選擇</label>
+                        <select id="aiPlatform" class="form-select">
+                            <option value="deepseek">DeepSeek (推薦)</option>
+                            <option value="gpt">ChatGPT (OpenAI)</option>
+                            <option value="gemini">Gemini (Google)</option>
+                            <option value="claude">Claude (Anthropic)</option>
+                            <option value="grok">Grok (xAI)</option>
+                        </select>
+                        <small class="text-muted">
+                            <a href="#" id="getApiLink" class="text-primary">📌 獲取API Key</a>
+                        </small>
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label">API Key</label>
+                        <div class="input-group">
+                            <input type="password" id="aiApiKey" class="form-control" placeholder="輸入選擇平台的 API Key">
+                            <button class="btn btn-outline-primary" type="button" id="verifyAiKey">驗證</button>
+                        </div>
+                        <small class="text-muted" id="apiKeyHint">請輸入有效的API Key</small>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">分析類型</label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="analysisType" id="newsAnalysis" value="news" checked>
+                            <label class="btn btn-outline-success" for="newsAnalysis">📰 消息面分析</label>
+                            
+                            <input type="radio" class="btn-check" name="analysisType" id="riskAnalysis" value="risk">
+                            <label class="btn btn-outline-warning" for="riskAnalysis">⚠️ 風險面分析</label>
+                        </div>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div class="row g-3 align-items-center">
-                        <div class="col-md-3">
-                            <label class="form-label">AI平台選擇</label>
-                            <select id="aiPlatform" class="form-select">
-                                <option value="deepseek">DeepSeek</option>
-                                <option value="gpt">ChatGPT (OpenAI)</option>
-                                <option value="gemini">Gemini (Google)</option>
-                                <option value="claude">Claude (Anthropic)</option>
-                                <option value="grok">Grok (xAI)</option>
-                            </select>
-                        </div>
-                        <div class="col-md-5">
-                            <label class="form-label">API Key</label>
-                            <div class="input-group">
-                                <input type="password" id="aiApiKey" class="form-control" placeholder="輸入選擇平台的 API Key">
-                                <button class="btn btn-outline-primary" type="button" id="verifyAiKey">驗證</button>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">分析類型</label>
-                            <div class="btn-group w-100" role="group">
-                                <input type="radio" class="btn-check" name="analysisType" id="newsAnalysis" value="news" checked>
-                                <label class="btn btn-outline-success" for="newsAnalysis">📰 消息面分析</label>
-                                
-                                <input type="radio" class="btn-check" name="analysisType" id="riskAnalysis" value="risk">
-                                <label class="btn btn-outline-warning" for="riskAnalysis">⚠️ 風險面分析</label>
-                            </div>
+                
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button class="btn btn-primary" id="aiAnalyzeBtn" disabled>
+                                <span class="spinner-border spinner-border-sm me-2" id="aiSpinner" style="display: none;"></span>
+                                🤖 AI 分析
+                            </button>
+                            <button class="btn btn-outline-secondary" id="clearAiAnalysis">
+                                🗑️ 清除分析
+                            </button>
+                            <button class="btn btn-outline-info" id="testConnectionBtn">
+                                🔗 測試連線
+                            </button>
+                            <div id="aiKeyStatus" class="ms-2 align-self-center"></div>
                         </div>
                     </div>
-                    
-                    <div class="row mt-3">
-                        <div class="col-12">
-                            <div class="d-flex gap-2">
-                                <button class="btn btn-primary" id="aiAnalyzeBtn" disabled>
-                                    <span class="spinner-border spinner-border-sm me-2" id="aiSpinner" style="display: none;"></span>
-                                    🤖 AI 分析
-                                </button>
-                                <button class="btn btn-outline-secondary" id="clearAiAnalysis">清除分析</button>
-                                <div id="aiKeyStatus" class="ms-2 align-self-center"></div>
-                            </div>
-                        </div>
-                    </div>
+                </div>
+
+                <!-- AI 分析結果顯示 -->
+                <div id="aiAnalysisResult" class="mt-4" style="display: none;">
+                    <!-- 保持不變 -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
                     <!-- AI 分析結果顯示 -->
                     <div id="aiAnalysisResult" class="mt-4" style="display: none;">
@@ -299,8 +317,26 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(msg);
     }
 
-    // ================= AI 分析功能 =================
+     // ================= AI 分析功能增強 =================
     
+    // API 平台鏈接映射
+    const apiPlatformLinks = {
+        'deepseek': 'https://platform.deepseek.com/api_keys',
+        'gpt': 'https://platform.openai.com/api-keys',
+        'gemini': 'https://aistudio.google.com/app/apikey',
+        'claude': 'https://console.anthropic.com/settings/keys',
+        'grok': 'https://console.x.ai/keys'
+    };
+
+    // API Key 格式提示
+    const apiKeyHints = {
+        'deepseek': 'DeepSeek API Key 以 sk- 開頭',
+        'gpt': 'OpenAI API Key 以 sk- 開頭', 
+        'gemini': 'Google AI Studio API Key',
+        'claude': 'Claude API Key 以 sk-ant- 開頭',
+        'grok': 'Grok API Key'
+    };
+
     let currentAiApiKey = '';
     let currentAiPlatform = 'deepseek';
     let isAiKeyVerified = false;
@@ -316,24 +352,100 @@ document.addEventListener('DOMContentLoaded', () => {
             currentAiApiKey = config.apiKey || '';
             isAiKeyVerified = config.verified || false;
             updateAiButtonState();
+            
+            // 更新提示
+            const hint = apiKeyHints[currentAiPlatform] || '請輸入有效的API Key';
+            document.getElementById('apiKeyHint').textContent = hint;
         }
     } catch (e) {
         console.error('加載AI配置失敗:', e);
     }
 
-    // AI 平台選擇變化
+    // 獲取API鏈接
+    document.getElementById('getApiLink').addEventListener('click', function(e) {
+        e.preventDefault();
+        const platform = document.getElementById('aiPlatform').value;
+        const url = apiPlatformLinks[platform];
+        if (url) {
+            window.open(url, '_blank');
+        }
+    });
+
+    // 平台變化時更新提示
     document.getElementById('aiPlatform').addEventListener('change', function() {
         currentAiPlatform = this.value;
+        const hint = apiKeyHints[currentAiPlatform] || '請輸入有效的API Key';
+        document.getElementById('apiKeyHint').textContent = hint;
         updateAiButtonState();
     });
 
-    // API Key 輸入變化
-    document.getElementById('aiApiKey').addEventListener('input', function() {
-        currentAiApiKey = this.value.trim();
-        updateAiButtonState();
+    // 測試連線按鈕
+    document.getElementById('testConnectionBtn').addEventListener('click', async function() {
+        if (!currentAiApiKey) {
+            alert('請先輸入 API Key');
+            return;
+        }
+
+        const testBtn = this;
+        const originalText = testBtn.innerHTML;
+        testBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>測試中...';
+        testBtn.disabled = true;
+
+        try {
+            log(`測試 ${currentAiPlatform} API 連線...`);
+            
+            // 發送測試請求
+            const response = await fetch('/.netlify/functions/fetch-ai-analysis', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    stockId: '2330',
+                    stockName: '台積電',
+                    platform: currentAiPlatform,
+                    apiKey: currentAiApiKey,
+                    analysisType: 'news'
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || `HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+            
+            if (result.error) {
+                throw new Error(result.error);
+            }
+
+            document.getElementById('aiKeyStatus').innerHTML = 
+                '<span class="badge bg-success">✓ 連線正常</span>';
+            log(`✅ ${currentAiPlatform} API 連線測試成功`);
+            alert(`✅ ${currentAiPlatform} API 連線正常！`);
+            
+        } catch (error) {
+            let errorMessage = '連線失敗';
+            if (error.message.includes('API Key') || error.message.includes('401') || error.message.includes('403')) {
+                errorMessage = 'API Key 無效或已過期';
+            } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                errorMessage = '網絡連線失敗';
+            } else if (error.message.includes('quota') || error.message.includes('limit')) {
+                errorMessage = 'API 配額已用盡';
+            }
+            
+            document.getElementById('aiKeyStatus').innerHTML = 
+                `<span class="badge bg-danger">✗ ${errorMessage}</span>`;
+            log(`❌ API 連線測試失敗: ${error.message}`);
+            alert(`❌ ${errorMessage}`);
+        } finally {
+            testBtn.innerHTML = originalText;
+            testBtn.disabled = false;
+        }
     });
 
-    // 驗證 API Key
+    // 改進的 API Key 驗證
     document.getElementById('verifyAiKey').addEventListener('click', async function() {
         if (!currentAiApiKey) {
             alert('請輸入 API Key');
@@ -346,12 +458,12 @@ document.addEventListener('DOMContentLoaded', () => {
         verifyBtn.disabled = true;
 
         try {
-            // 簡單的格式驗證
-            if (currentAiPlatform === 'gpt' && !currentAiApiKey.startsWith('sk-')) {
-                throw new Error('OpenAI API Key 格式不正確');
+            // 基礎格式驗證
+            if ((currentAiPlatform === 'gpt' || currentAiPlatform === 'deepseek') && !currentAiApiKey.startsWith('sk-')) {
+                throw new Error('API Key 格式不正確，應該以 sk- 開頭');
             }
-            if (currentAiPlatform === 'claude' && currentAiApiKey.length < 10) {
-                throw new Error('Claude API Key 格式不正確');
+            if (currentAiPlatform === 'claude' && !currentAiApiKey.startsWith('sk-ant-')) {
+                throw new Error('Claude API Key 格式不正確，應該以 sk-ant- 開頭');
             }
 
             // 保存配置
@@ -366,9 +478,9 @@ document.addEventListener('DOMContentLoaded', () => {
             updateAiButtonState();
             
             document.getElementById('aiKeyStatus').innerHTML = 
-                '<span class="badge bg-success">✓ 驗證成功</span>';
+                '<span class="badge bg-success">✓ 格式驗證成功</span>';
             
-            log(`✅ ${currentAiPlatform} API Key 驗證成功`);
+            log(`✅ ${currentAiPlatform} API Key 格式驗證成功`);
             
         } catch (error) {
             document.getElementById('aiKeyStatus').innerHTML = 
@@ -381,7 +493,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // AI 分析按鈕
+    // API Key 輸入變化
+    document.getElementById('aiApiKey').addEventListener('input', function() {
+        currentAiApiKey = this.value.trim();
+        updateAiButtonState();
+        
+        // 清除驗證狀態
+        if (currentAiApiKey === '') {
+            document.getElementById('aiKeyStatus').innerHTML = '';
+            isAiKeyVerified = false;
+        }
+    });
+
+    // 改進的 AI 分析錯誤處理
     document.getElementById('aiAnalyzeBtn').addEventListener('click', async function() {
         const symbol = document.getElementById('stockSelect').value.trim();
         if (!symbol) {
@@ -421,7 +545,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!response.ok) {
-                throw new Error(`網絡請求失敗: ${response.status}`);
+                const errorData = await response.json();
+                throw new Error(errorData.error || `HTTP ${response.status}`);
             }
 
             const result = await response.json();
@@ -453,8 +578,19 @@ document.addEventListener('DOMContentLoaded', () => {
             log(`✅ ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析完成，評分: ${result.score}`);
             
         } catch (error) {
+            let errorMessage = 'AI分析失敗';
+            if (error.message.includes('API Key') || error.message.includes('401')) {
+                errorMessage = 'API Key 無效或已過期';
+            } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                errorMessage = '網絡連線失敗，請檢查網絡連接';
+            } else if (error.message.includes('quota') || error.message.includes('limit')) {
+                errorMessage = 'API 配額已用盡';
+            } else if (error.message.includes('timeout')) {
+                errorMessage = '請求超時，請稍後重試';
+            }
+            
             log(`❌ AI 分析失敗: ${error.message}`);
-            alert(`AI 分析失敗: ${error.message}`);
+            alert(`❌ ${errorMessage}`);
         } finally {
             analyzeBtn.disabled = false;
             spinner.style.display = 'none';
