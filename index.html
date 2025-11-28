@@ -499,7 +499,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 改進的 AI 分析錯誤處理
-      // AI分析按鈕 - 使用直接分析函數
+    // AI分析按鈕 - 使用結構化分析
     document.getElementById('aiAnalyzeBtn').addEventListener('click', async function() {
         const symbol = document.getElementById('stockSelect').value.trim();
         if (!symbol) {
@@ -520,15 +520,15 @@ document.addEventListener('DOMContentLoaded', () => {
         spinner.style.display = 'inline-block';
         
         document.getElementById('aiKeyStatus').innerHTML = 
-            '<span class="badge bg-info">🔄 分析中...</span>';
+            '<span class="badge bg-info">🔄 分析中... (約20秒)</span>';
         
         try {
             log(`開始 ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析: ${symbol}`);
             
             const stockName = stockData.find(s => s.stock_id === symbol)?.stock_name || symbol;
             
-            // 使用直接分析函數
-            const response = await fetch('/.netlify/functions/direct-analyze', {
+            // 使用結構化分析函數
+            const response = await fetch('/.netlify/functions/structured-analyze', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -541,17 +541,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
             });
 
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || `HTTP ${response.status}`);
+            }
+
             const result = await response.json();
             
             if (result.error) {
                 throw new Error(result.error);
             }
 
-            // 顯示結果
+            // 顯示結構化結果
             document.getElementById('aiAnalysisContent').textContent = result.content;
-            document.getElementById('aiScoreDisplay').textContent = result.score;
+            document.getElementById('aiScoreDisplay').textContent = 
+                result.score > 0 ? `+${result.score}` : result.score;
             document.getElementById('aiComment').textContent = result.comment;
             
+            // 更新評分顯示
             const scoreDisplay = document.getElementById('aiScoreDisplay');
             scoreDisplay.className = 'fs-1 fw-bold ' + 
                 (result.score > 0 ? 'text-success' : 
@@ -559,6 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             document.getElementById('aiAnalysisResult').style.display = 'block';
             
+            // 自動應用評分
             if (document.getElementById('autoApplyScore').checked) {
                 applyAiScoreToSystem(result.score, analysisType);
             }
@@ -566,7 +574,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('aiKeyStatus').innerHTML = 
                 '<span class="badge bg-success">✓ 分析完成</span>';
             
-            log(`✅ AI分析完成，評分: ${result.score}`);
+            log(`✅ ${analysisType === 'news' ? '消息面' : '風險面'} AI分析完成，評分: ${result.score}`);
             
         } catch (error) {
             document.getElementById('aiKeyStatus').innerHTML = 
