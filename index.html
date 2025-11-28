@@ -171,57 +171,115 @@
 
                 <!-- AI 分析結果顯示 -->
                 <div id="aiAnalysisResult" class="mt-4" style="display: none;">
-                    <!-- 保持不變 -->
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-                    <!-- AI 分析結果顯示 -->
-                    <div id="aiAnalysisResult" class="mt-4" style="display: none;">
-                        <ul class="nav nav-tabs" id="aiResultTabs" role="tablist">
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link active" id="analysis-content-tab" data-bs-toggle="tab" data-bs-target="#analysis-content" type="button" role="tab">分析報告</button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="score-summary-tab" data-bs-toggle="tab" data-bs-target="#score-summary" type="button" role="tab">評分摘要</button>
-                            </li>
-                        </ul>
-                        
-                        <div class="tab-content mt-3">
-                            <div class="tab-pane fade show active" id="analysis-content" role="tabpanel">
-                                <div class="border rounded p-3 bg-light">
-                                    <pre id="aiAnalysisContent" style="white-space: pre-wrap; font-family: inherit;"></pre>
-                                </div>
+                    <ul class="nav nav-tabs" id="aiResultTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="analysis-content-tab" data-bs-toggle="tab" data-bs-target="#analysis-content" type="button" role="tab">分析報告</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="score-summary-tab" data-bs-toggle="tab" data-bs-target="#score-summary" type="button" role="tab">評分摘要</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="score-details-tab" data-bs-toggle="tab" data-bs-target="#score-details" type="button" role="tab">評分明細</button>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content mt-3">
+                        <div class="tab-pane fade show active" id="analysis-content" role="tabpanel">
+                            <div class="border rounded p-3 bg-light">
+                                <pre id="aiAnalysisContent" style="white-space: pre-wrap; font-family: inherit;"></pre>
                             </div>
-                            <div class="tab-pane fade" id="score-summary" role="tabpanel">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="card">
-                                            <div class="card-body text-center">
-                                                <h5>AI 分析評分</h5>
-                                                <div id="aiScoreDisplay" class="fs-1 fw-bold text-primary">0</div>
-                                                <div id="aiComment" class="text-muted mt-2"></div>
-                                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="score-summary" role="tabpanel">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-body text-center">
+                                            <h5>AI 分析評分</h5>
+                                            <div id="aiScoreDisplay" class="fs-1 fw-bold text-primary">0</div>
+                                            <div id="aiComment" class="text-muted mt-2"></div>
                                         </div>
                                     </div>
-                                    <div class="col-md-6">
-                                        <div class="card">
-                                            <div class="card-body">
-                                                <h6>應用評分到系統</h6>
-                                                <div class="form-check mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="autoApplyScore" checked>
-                                                    <label class="form-check-label" for="autoApplyScore">
-                                                        自動應用評分
-                                                    </label>
-                                                </div>
-                                                <button class="btn btn-success w-100" id="applyAiScore">
-                                                    ✅ 應用評分到專業評分表
-                                                </button>
-                                                <small class="text-muted">將自動填充到對應的評分項目</small>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-body">
+                                            <h6>應用評分到系統</h6>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="checkbox" id="autoApplyScore" checked>
+                                                <label class="form-check-label" for="autoApplyScore">
+                                                    自動應用評分
+                                                </label>
                                             </div>
+                                            <button class="btn btn-success w-100" id="applyAiScore">
+                                                ✅ 應用評分到專業評分表
+                                            </button>
+                                            <small class="text-muted">將自動填充到對應的評分項目</small>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="score-details" role="tabpanel">
+                            <!-- 消息面評分表格 -->
+                            <div id="newsScoreTable" class="card mb-4" style="display: none;">
+                                <div class="card-header bg-success text-white">
+                                    <strong>📰 消息面評分明細</strong>
+                                </div>
+                                <div class="card-body">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>項目</th>
+                                                <th>分析與權重</th>
+                                                <th>分散貢獻</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="newsScoreDetails">
+                                            <!-- 動態填充消息面評分項目 -->
+                                        </tbody>
+                                        <tfoot>
+                                            <tr class="table-primary">
+                                                <td><strong>總計</strong></td>
+                                                <td><strong>消息面最終得分</strong></td>
+                                                <td><strong id="newsTotalScore">0</strong></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                    <div class="mt-3">
+                                        <strong>評語:</strong> 
+                                        <span id="newsFinalComment"></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 風險面評分表格 -->
+                            <div id="riskScoreTable" class="card" style="display: none;">
+                                <div class="card-header bg-warning text-dark">
+                                    <strong>⚠️ 風險面評分明細</strong>
+                                </div>
+                                <div class="card-body">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>項目</th>
+                                                <th>分析與權重</th>
+                                                <th>分散貢獻</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="riskScoreDetails">
+                                            <!-- 動態填充風險面評分項目 -->
+                                        </tbody>
+                                        <tfoot>
+                                            <tr class="table-primary">
+                                                <td><strong>總計</strong></td>
+                                                <td><strong>風險面最終得分</strong></td>
+                                                <td><strong id="riskTotalScore">0</strong></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                    <div class="mt-3">
+                                        <strong>評語:</strong> 
+                                        <span id="riskFinalComment"></span>
                                     </div>
                                 </div>
                             </div>
@@ -231,6 +289,7 @@
             </div>
         </div>
     </div>
+</div>
 
     <div class="text-center mb-4">
         <button class="btn btn-outline-light" type="button" data-bs-toggle="collapse" data-bs-target="#debugLog">
@@ -566,6 +625,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             document.getElementById('aiAnalysisResult').style.display = 'block';
             
+            // 顯示評分明細
+            displayScoreDetails(analysisType, result.content, result.score, stockName);
+            
             // 自動應用評分
             if (document.getElementById('autoApplyScore').checked) {
                 applyAiScoreToSystem(result.score, analysisType);
@@ -643,6 +705,201 @@ document.addEventListener('DOMContentLoaded', () => {
         
         log(`✅ AI ${analysisType === 'news' ? '消息面' : '風險面'}評分 ${score} 已應用到系統 (加權: ${weightedScore})`);
         alert(`AI 評分已成功應用到${analysisType === 'news' ? '消息面' : '風險面'}！`);
+    }
+
+    // ================= 新增：顯示評分明細函數 =================
+    function displayScoreDetails(analysisType, content, score, stockName) {
+        const newsTable = document.getElementById('newsScoreTable');
+        const riskTable = document.getElementById('riskScoreTable');
+        const newsDetails = document.getElementById('newsScoreDetails');
+        const riskDetails = document.getElementById('riskScoreDetails');
+        
+        // 隱藏所有表格
+        newsTable.style.display = 'none';
+        riskTable.style.display = 'none';
+        
+        if (analysisType === 'news') {
+            // 顯示消息面評分表格
+            newsTable.style.display = 'block';
+            
+            // 從AI回應內容中提取正面和負面因素
+            const positives = extractFactors(content, '正面');
+            const negatives = extractFactors(content, '負面');
+            
+            // 生成評分數據
+            const newsScoreData = generateNewsScoreData(positives, negatives, score);
+            
+            newsDetails.innerHTML = newsScoreData.map(item => `
+                <tr>
+                    <td><strong>${item.item}</strong></td>
+                    <td>${item.analysis}</td>
+                    <td>${item.score > 0 ? '+' : ''}${item.score}</td>
+                </tr>
+            `).join('');
+            
+            document.getElementById('newsTotalScore').textContent = score > 0 ? `+${score}` : score;
+            
+            // 生成評語
+            const comment = generateNewsComment(score, stockName, positives, negatives);
+            document.getElementById('newsFinalComment').textContent = comment;
+            
+        } else {
+            // 顯示風險面評分表格
+            riskTable.style.display = 'block';
+            
+            // 從AI回應內容中提取風險和緩衝因素
+            const risks = extractFactors(content, '風險');
+            const buffers = extractFactors(content, '緩衝');
+            
+            // 生成評分數據
+            const riskScoreData = generateRiskScoreData(risks, buffers, score);
+            
+            riskDetails.innerHTML = riskScoreData.map(item => `
+                <tr>
+                    <td><strong>${item.item}</strong></td>
+                    <td>${item.analysis}</td>
+                    <td>${item.score > 0 ? '+' : ''}${item.score}</td>
+                </tr>
+            `).join('');
+            
+            document.getElementById('riskTotalScore').textContent = score > 0 ? `+${score}` : score;
+            
+            // 生成評語
+            const comment = generateRiskComment(score, stockName, risks, buffers);
+            document.getElementById('riskFinalComment').textContent = comment;
+        }
+    }
+
+    // 從AI回應中提取因素
+    function extractFactors(content, type) {
+        const factors = [];
+        const lines = content.split('\n');
+        let inSection = false;
+        
+        for (const line of lines) {
+            const trimmed = line.trim();
+            
+            if (trimmed.includes(type) || trimmed.includes(type === '正面' ? '利多' : type === '風險' ? '高風險' : '緩衝')) {
+                inSection = true;
+                continue;
+            }
+            
+            if (inSection && (trimmed.includes('負面') || trimmed.includes('利空') || trimmed.includes('中風險') || trimmed.includes('低風險') || trimmed === '')) {
+                break;
+            }
+            
+            if (inSection && trimmed.match(/^\d+\./)) {
+                factors.push(trimmed.replace(/^\d+\.\s*/, '').trim());
+            }
+        }
+        
+        return factors.length > 0 ? factors : [`${type}因素分析詳見完整報告`];
+    }
+
+    // 生成消息面評分數據
+    function generateNewsScoreData(positives, negatives, totalScore) {
+        const items = [];
+        let currentScore = 0;
+        
+        // 正面因素
+        positives.forEach((positive, index) => {
+            if (index < 3) {
+                const score = Math.min(4, Math.max(1, Math.floor((4 - index) * 0.8)));
+                items.push({
+                    item: `正面因素 ${index + 1}`,
+                    analysis: positive,
+                    score: score
+                });
+                currentScore += score;
+            }
+        });
+        
+        // 負面因素
+        negatives.forEach((negative, index) => {
+            if (index < 2) {
+                const score = Math.max(-2, Math.min(-1, -Math.floor((2 - index) * 0.5)));
+                items.push({
+                    item: `負面因素 ${index + 1}`,
+                    analysis: negative,
+                    score: score
+                });
+                currentScore += score;
+            }
+        });
+        
+        // 調整分數以匹配總分
+        const scoreDiff = totalScore - currentScore;
+        if (scoreDiff !== 0 && items.length > 0) {
+            // 將差異分配到第一個項目
+            items[0].score += scoreDiff;
+        }
+        
+        return items;
+    }
+
+    // 生成風險面評分數據
+    function generateRiskScoreData(risks, buffers, totalScore) {
+        const items = [];
+        let currentScore = 0;
+        
+        // 風險因素
+        risks.forEach((risk, index) => {
+            if (index < 3) {
+                const score = Math.max(-5, Math.min(-1, -Math.floor((4 - index) * 1.2)));
+                items.push({
+                    item: `風險因素 ${index + 1}`,
+                    analysis: risk,
+                    score: score
+                });
+                currentScore += score;
+            }
+        });
+        
+        // 緩衝因素
+        buffers.forEach((buffer, index) => {
+            if (index < 2) {
+                const score = Math.min(3, Math.max(1, Math.floor((3 - index) * 0.8)));
+                items.push({
+                    item: `風險緩衝 ${index + 1}`,
+                    analysis: buffer,
+                    score: score
+                });
+                currentScore += score;
+            }
+        });
+        
+        // 調整分數以匹配總分
+        const scoreDiff = totalScore - currentScore;
+        if (scoreDiff !== 0 && items.length > 0) {
+            // 將差異分配到第一個項目
+            items[0].score += scoreDiff;
+        }
+        
+        return items;
+    }
+
+    // 生成消息面評語
+    function generateNewsComment(score, stockName, positives, negatives) {
+        if (score >= 7) {
+            return `${stockName}在市場消息面上獲得 +${score} 分。這代表其基本面非常穩固，市場對其前景抱持極度樂觀的態度。主要利多因素包括${positives.slice(0,2).join('、')}等。`;
+        } else if (score >= 3) {
+            return `${stockName}在市場消息面上獲得 +${score} 分。整體表現穩健，市場看法偏向正面。正面因素如${positives[0]}，但需注意${negatives[0]}等風險。`;
+        } else if (score >= -2) {
+            return `${stockName}在市場消息面上獲得 ${score} 分。市場看法中性，利多利空因素相互抵消。需要關注後續發展。`;
+        } else {
+            return `${stockName}在市場消息面上獲得 ${score} 分。市場存在較多疑慮，主要風險包括${negatives.slice(0,2).join('、')}等。建議謹慎評估。`;
+        }
+    }
+
+    // 生成風險面評語
+    function generateRiskComment(score, stockName, risks, buffers) {
+        if (score >= 3) {
+            return `${stockName}在風險面上獲得 +${score} 分。風險控制良好，具備較強的風險抵抗力。主要優勢包括${buffers.slice(0,2).join('、')}等。`;
+        } else if (score >= -2) {
+            return `${stockName}在風險面上獲得 ${score} 分。風險水平適中，需要持續關注${risks[0]}等風險因素，但公司具備${buffers[0]}等緩衝能力。`;
+        } else {
+            return `${stockName}在風險面上獲得 ${score} 分。風險因素較為顯著，特別是${risks.slice(0,2).join('、')}等問題。投資者需密切監控風險變化。`;
+        }
     }
 
     // ================= 核心 API 函數 =================
