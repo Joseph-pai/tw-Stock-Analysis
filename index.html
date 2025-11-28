@@ -494,68 +494,67 @@ document.addEventListener('DOMContentLoaded', () => {
         updateAiButtonState();
     });
 
-    // 測試連線按鈕 - 使用簡單測試函數
-    document.getElementById('testConnectionBtn').addEventListener('click', async function() {
-        if (!currentAiApiKey) {
-            alert('請先輸入 API Key');
-            return;
+// 測試連線按鈕 - 修復版本
+document.getElementById('testConnectionBtn').addEventListener('click', async function() {
+    if (!currentAiApiKey) {
+        alert('請先輸入 API Key');
+        return;
+    }
+
+    const testBtn = this;
+    const originalText = testBtn.innerHTML;
+    testBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>測試中...';
+    testBtn.disabled = true;
+
+    try {
+        log(`測試 ${currentAiPlatform} API 連線...`);
+        
+        // 使用簡單測試函數，不依賴股票代碼
+        const response = await fetch('/.netlify/functions/simple-deepseek', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                apiKey: currentAiApiKey,
+                platform: currentAiPlatform  // 添加平台參數
+            })
+        });
+
+        const result = await response.json();
+        
+        if (result.error) {
+            throw new Error(result.error);
         }
 
-        const testBtn = this;
-        const originalText = testBtn.innerHTML;
-        testBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>測試中...';
-        testBtn.disabled = true;
-
-        try {
-            log(`測試 ${currentAiPlatform} API 連線...`);
-            
-   // 在 aiAnalyzeBtn 的 click 事件處理中，修改請求體：
-const response = await fetch('/.netlify/functions/structured-analyze', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-        stockId: symbol,
-        stockName: stockName,
-        apiKey: currentAiApiKey,
-        analysisType: analysisType,
-        platform: currentAiPlatform  // 添加平台參數
-    })
+        document.getElementById('aiKeyStatus').innerHTML = 
+            '<span class="badge bg-success">✓ 連線正常</span>';
+        log(`✅ ${currentAiPlatform} API 連線測試成功`);
+        alert(`✅ ${currentAiPlatform} API 連線正常！\n${result.message}`);
+        
+    } catch (error) {
+        let errorMessage = '連線失敗';
+        if (error.message.includes('API Key') || error.message.includes('401')) {
+            errorMessage = 'API Key 無效或已過期';
+        } else if (error.message.includes('network') || error.message.includes('fetch') || error.message.includes('ECONNREFUSED')) {
+            errorMessage = '網絡連線失敗，請檢查網絡連接';
+        } else if (error.message.includes('timeout')) {
+            errorMessage = '請求超時';
+        } else if (error.message.includes('502') || error.message.includes('503')) {
+            errorMessage = '服務器暫時不可用，請稍後重試';
+        } else if (error.message.includes('symbol is not defined')) {
+            errorMessage = '測試功能配置錯誤，但API Key格式正確';
+        }
+        
+        document.getElementById('aiKeyStatus').innerHTML = 
+            `<span class="badge bg-danger">✗ ${errorMessage}</span>`;
+        log(`❌ API 連線測試失敗: ${error.message}`);
+        alert(`❌ ${errorMessage}\n\n詳細信息: ${error.message}`);
+    } finally {
+        testBtn.innerHTML = originalText;
+        testBtn.disabled = false;
+    }
 });
-
-            const result = await response.json();
-            
-            if (result.error) {
-                throw new Error(result.error);
-            }
-
-            document.getElementById('aiKeyStatus').innerHTML = 
-                '<span class="badge bg-success">✓ 連線正常</span>';
-            log(`✅ ${currentAiPlatform} API 連線測試成功`);
-            alert(`✅ ${currentAiPlatform} API 連線正常！\n${result.message}`);
-            
-        } catch (error) {
-            let errorMessage = '連線失敗';
-            if (error.message.includes('API Key') || error.message.includes('401')) {
-                errorMessage = 'API Key 無效或已過期';
-            } else if (error.message.includes('network') || error.message.includes('fetch') || error.message.includes('ECONNREFUSED')) {
-                errorMessage = '網絡連線失敗，請檢查網絡連接';
-            } else if (error.message.includes('timeout')) {
-                errorMessage = '請求超時';
-            } else if (error.message.includes('502') || error.message.includes('503')) {
-                errorMessage = '服務器暫時不可用，請稍後重試';
-            }
-            
-            document.getElementById('aiKeyStatus').innerHTML = 
-                `<span class="badge bg-danger">✗ ${errorMessage}</span>`;
-            log(`❌ API 連線測試失敗: ${error.message}`);
-            alert(`❌ ${errorMessage}\n\n詳細信息: ${error.message}`);
-        } finally {
-            testBtn.innerHTML = originalText;
-            testBtn.disabled = false;
-        }
-    });
 
     // 改進的 API Key 驗證
     document.getElementById('verifyAiKey').addEventListener('click', async function() {
