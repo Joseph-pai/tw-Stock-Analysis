@@ -39,17 +39,20 @@
     <h1 class="text-center mb-2">台灣股市終極專業分析器</h1>
     <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/26 專業評分詳解版 • Netlify Functions + TWSE API</p>
 
-    <div class="row justify-content-center mb-4">
-        <div class="col-md-8">
+ <div class="row justify-content-center mb-4">
+    <div class="col-md-8">
+        <!-- 修改後的 Token 輸入區域 -->
+        <div class="mb-3">
+            <label class="form-label text-white-50 mb-2">FinMind Token（選填）</label>
             <div class="input-group">
-                <span class="input-group-text">FinMind Token（選填）</span>
                 <input type="text" id="tokenInput" class="form-control bg-white text-dark" placeholder="貼上 Token 或留空使用公開資料">
                 <button class="btn btn-warning fw-bold" id="saveToken">儲存</button>
             </div>
-            <small class="text-white-50">免費註冊 → <a href="https://finmindtrade.com/analysis/#/account/register" target="_blank" class="text-warning">FinMind（30秒）</a> ｜ 或直接使用證交所+觀測站公開資料</small>
-            <div id="tokenStatus" class="token-status mt-2"></div>
         </div>
+        <small class="text-white-50">免費註冊 → <a href="https://finmindtrade.com/analysis/#/account/register" target="_blank" class="text-warning">FinMind（30秒）</a> ｜ 或直接使用證交所+觀測站公開資料</small>
+        <div id="tokenStatus" class="token-status mt-2"></div>
     </div>
+</div>
 
     <div class="row justify-content-center mb-4">
         <div class="col-md-8">
