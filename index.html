@@ -506,6 +506,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 改進的 AI 分析錯誤處理
+       // 改進的 AI 分析功能 - 支持多平台
     document.getElementById('aiAnalyzeBtn').addEventListener('click', async function() {
         const symbol = document.getElementById('stockSelect').value.trim();
         if (!symbol) {
@@ -513,8 +514,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (!isAiKeyVerified || !currentAiApiKey) {
-            alert('請先驗證 API Key');
+        if (!currentAiApiKey) {
+            alert('請先輸入 API Key');
             return;
         }
 
@@ -525,24 +526,48 @@ document.addEventListener('DOMContentLoaded', () => {
         analyzeBtn.disabled = true;
         spinner.style.display = 'inline-block';
         
+        // 更新狀態顯示
+        document.getElementById('aiKeyStatus').innerHTML = 
+            '<span class="badge bg-info">🔄 分析中...</span>';
+        
         try {
             log(`開始 ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析: ${symbol}`);
             
             const stockName = stockData.find(s => s.stock_id === symbol)?.stock_name || symbol;
             
-            const response = await fetch('/.netlify/functions/fetch-ai-analysis', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    stockId: symbol,
-                    stockName: stockName,
-                    platform: currentAiPlatform,
-                    apiKey: currentAiApiKey,
-                    analysisType: analysisType
-                })
-            });
+            let response;
+            
+            // 根據選擇的平台使用不同的函數
+            if (currentAiPlatform === 'deepseek') {
+                // 使用專門的DeepSeek分析函數
+                response = await fetch('/.netlify/functions/deepseek-analyzer', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        stockId: symbol,
+                        stockName: stockName,
+                        apiKey: currentAiApiKey,
+                        analysisType: analysisType
+                    })
+                });
+            } else {
+                // 其他平台使用原來的函數
+                response = await fetch('/.netlify/functions/fetch-ai-analysis', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        stockId: symbol,
+                        stockName: stockName,
+                        platform: currentAiPlatform,
+                        apiKey: currentAiApiKey,
+                        analysisType: analysisType
+                    })
+                });
+            }
 
             if (!response.ok) {
                 const errorData = await response.json();
@@ -575,6 +600,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 applyAiScoreToSystem(result.score, analysisType);
             }
             
+            // 更新狀態
+            document.getElementById('aiKeyStatus').innerHTML = 
+                '<span class="badge bg-success">✓ 分析完成</span>';
+            
             log(`✅ ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析完成，評分: ${result.score}`);
             
         } catch (error) {
@@ -589,8 +618,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 errorMessage = '請求超時，請稍後重試';
             }
             
+            document.getElementById('aiKeyStatus').innerHTML = 
+                `<span class="badge bg-danger">✗ ${errorMessage}</span>`;
             log(`❌ AI 分析失敗: ${error.message}`);
-            alert(`❌ ${errorMessage}`);
+            alert(`❌ ${errorMessage}\n\n建議：\n1. 檢查API Key是否正確\n2. 確保有足夠的API配額\n3. 如為DeepSeek，請確認賬戶已充值`);
         } finally {
             analyzeBtn.disabled = false;
             spinner.style.display = 'none';
