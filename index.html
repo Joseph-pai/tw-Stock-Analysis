@@ -379,7 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateAiButtonState();
     });
 
-    // 測試連線按鈕
+    // 測試連線按鈕 - 使用簡單測試函數
     document.getElementById('testConnectionBtn').addEventListener('click', async function() {
         if (!currentAiApiKey) {
             alert('請先輸入 API Key');
@@ -394,25 +394,16 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             log(`測試 ${currentAiPlatform} API 連線...`);
             
-            // 發送測試請求
-            const response = await fetch('/.netlify/functions/fetch-ai-analysis', {
+            // 使用簡單測試函數
+            const response = await fetch('/.netlify/functions/simple-deepseek', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    stockId: '2330',
-                    stockName: '台積電',
-                    platform: currentAiPlatform,
-                    apiKey: currentAiApiKey,
-                    analysisType: 'news'
+                    apiKey: currentAiApiKey
                 })
             });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `HTTP ${response.status}`);
-            }
 
             const result = await response.json();
             
@@ -423,22 +414,24 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('aiKeyStatus').innerHTML = 
                 '<span class="badge bg-success">✓ 連線正常</span>';
             log(`✅ ${currentAiPlatform} API 連線測試成功`);
-            alert(`✅ ${currentAiPlatform} API 連線正常！`);
+            alert(`✅ ${currentAiPlatform} API 連線正常！\n${result.message}`);
             
         } catch (error) {
             let errorMessage = '連線失敗';
-            if (error.message.includes('API Key') || error.message.includes('401') || error.message.includes('403')) {
+            if (error.message.includes('API Key') || error.message.includes('401')) {
                 errorMessage = 'API Key 無效或已過期';
-            } else if (error.message.includes('network') || error.message.includes('fetch')) {
-                errorMessage = '網絡連線失敗';
-            } else if (error.message.includes('quota') || error.message.includes('limit')) {
-                errorMessage = 'API 配額已用盡';
+            } else if (error.message.includes('network') || error.message.includes('fetch') || error.message.includes('ECONNREFUSED')) {
+                errorMessage = '網絡連線失敗，請檢查網絡連接';
+            } else if (error.message.includes('timeout')) {
+                errorMessage = '請求超時';
+            } else if (error.message.includes('502') || error.message.includes('503')) {
+                errorMessage = '服務器暫時不可用，請稍後重試';
             }
             
             document.getElementById('aiKeyStatus').innerHTML = 
                 `<span class="badge bg-danger">✗ ${errorMessage}</span>`;
             log(`❌ API 連線測試失敗: ${error.message}`);
-            alert(`❌ ${errorMessage}`);
+            alert(`❌ ${errorMessage}\n\n詳細信息: ${error.message}`);
         } finally {
             testBtn.innerHTML = originalText;
             testBtn.disabled = false;
@@ -506,7 +499,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 改進的 AI 分析錯誤處理
-       // 改進的 AI 分析功能 - 支持多平台
+      // AI分析按鈕 - 使用直接分析函數
     document.getElementById('aiAnalyzeBtn').addEventListener('click', async function() {
         const symbol = document.getElementById('stockSelect').value.trim();
         if (!symbol) {
@@ -526,7 +519,6 @@ document.addEventListener('DOMContentLoaded', () => {
         analyzeBtn.disabled = true;
         spinner.style.display = 'inline-block';
         
-        // 更新狀態顯示
         document.getElementById('aiKeyStatus').innerHTML = 
             '<span class="badge bg-info">🔄 分析中...</span>';
         
@@ -535,44 +527,19 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const stockName = stockData.find(s => s.stock_id === symbol)?.stock_name || symbol;
             
-            let response;
-            
-            // 根據選擇的平台使用不同的函數
-            if (currentAiPlatform === 'deepseek') {
-                // 使用專門的DeepSeek分析函數
-                response = await fetch('/.netlify/functions/deepseek-analyzer', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        stockId: symbol,
-                        stockName: stockName,
-                        apiKey: currentAiApiKey,
-                        analysisType: analysisType
-                    })
-                });
-            } else {
-                // 其他平台使用原來的函數
-                response = await fetch('/.netlify/functions/fetch-ai-analysis', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        stockId: symbol,
-                        stockName: stockName,
-                        platform: currentAiPlatform,
-                        apiKey: currentAiApiKey,
-                        analysisType: analysisType
-                    })
-                });
-            }
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `HTTP ${response.status}`);
-            }
+            // 使用直接分析函數
+            const response = await fetch('/.netlify/functions/direct-analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    stockId: symbol,
+                    stockName: stockName,
+                    apiKey: currentAiApiKey,
+                    analysisType: analysisType
+                })
+            });
 
             const result = await response.json();
             
@@ -580,48 +547,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(result.error);
             }
 
-            // 顯示分析結果
+            // 顯示結果
             document.getElementById('aiAnalysisContent').textContent = result.content;
-            document.getElementById('aiScoreDisplay').textContent = 
-                result.score > 0 ? `+${result.score}` : result.score;
+            document.getElementById('aiScoreDisplay').textContent = result.score;
             document.getElementById('aiComment').textContent = result.comment;
             
-            // 更新評分顯示顏色
             const scoreDisplay = document.getElementById('aiScoreDisplay');
             scoreDisplay.className = 'fs-1 fw-bold ' + 
                 (result.score > 0 ? 'text-success' : 
                  result.score < 0 ? 'text-danger' : 'text-warning');
             
-            // 顯示結果區域
             document.getElementById('aiAnalysisResult').style.display = 'block';
             
-            // 自動應用評分
             if (document.getElementById('autoApplyScore').checked) {
                 applyAiScoreToSystem(result.score, analysisType);
             }
             
-            // 更新狀態
             document.getElementById('aiKeyStatus').innerHTML = 
                 '<span class="badge bg-success">✓ 分析完成</span>';
             
-            log(`✅ ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析完成，評分: ${result.score}`);
+            log(`✅ AI分析完成，評分: ${result.score}`);
             
         } catch (error) {
-            let errorMessage = 'AI分析失敗';
-            if (error.message.includes('API Key') || error.message.includes('401')) {
-                errorMessage = 'API Key 無效或已過期';
-            } else if (error.message.includes('network') || error.message.includes('fetch')) {
-                errorMessage = '網絡連線失敗，請檢查網絡連接';
-            } else if (error.message.includes('quota') || error.message.includes('limit')) {
-                errorMessage = 'API 配額已用盡';
-            } else if (error.message.includes('timeout')) {
-                errorMessage = '請求超時，請稍後重試';
-            }
-            
             document.getElementById('aiKeyStatus').innerHTML = 
-                `<span class="badge bg-danger">✗ ${errorMessage}</span>`;
-            log(`❌ AI 分析失敗: ${error.message}`);
-            alert(`❌ ${errorMessage}\n\n建議：\n1. 檢查API Key是否正確\n2. 確保有足夠的API配額\n3. 如為DeepSeek，請確認賬戶已充值`);
+                `<span class="badge bg-danger">✗ 分析失敗</span>`;
+            log(`❌ AI分析失敗: ${error.message}`);
+            alert(`分析失敗: ${error.message}`);
         } finally {
             analyzeBtn.disabled = false;
             spinner.style.display = 'none';
