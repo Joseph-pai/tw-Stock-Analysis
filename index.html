@@ -109,6 +109,111 @@
         </div>
     </div>
 
+    <!-- AI 分析功能區域 -->
+    <div class="row justify-content-center mb-4">
+        <div class="col-md-12">
+            <div class="card text-dark">
+                <div class="card-header bg-info text-white">
+                    <strong>🔍 消息面與風險分析AI助手</strong>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-center">
+                        <div class="col-md-3">
+                            <label class="form-label">AI平台選擇</label>
+                            <select id="aiPlatform" class="form-select">
+                                <option value="deepseek">DeepSeek</option>
+                                <option value="gpt">ChatGPT (OpenAI)</option>
+                                <option value="gemini">Gemini (Google)</option>
+                                <option value="claude">Claude (Anthropic)</option>
+                                <option value="grok">Grok (xAI)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label">API Key</label>
+                            <div class="input-group">
+                                <input type="password" id="aiApiKey" class="form-control" placeholder="輸入選擇平台的 API Key">
+                                <button class="btn btn-outline-primary" type="button" id="verifyAiKey">驗證</button>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">分析類型</label>
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="analysisType" id="newsAnalysis" value="news" checked>
+                                <label class="btn btn-outline-success" for="newsAnalysis">📰 消息面分析</label>
+                                
+                                <input type="radio" class="btn-check" name="analysisType" id="riskAnalysis" value="risk">
+                                <label class="btn btn-outline-warning" for="riskAnalysis">⚠️ 風險面分析</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-primary" id="aiAnalyzeBtn" disabled>
+                                    <span class="spinner-border spinner-border-sm me-2" id="aiSpinner" style="display: none;"></span>
+                                    🤖 AI 分析
+                                </button>
+                                <button class="btn btn-outline-secondary" id="clearAiAnalysis">清除分析</button>
+                                <div id="aiKeyStatus" class="ms-2 align-self-center"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI 分析結果顯示 -->
+                    <div id="aiAnalysisResult" class="mt-4" style="display: none;">
+                        <ul class="nav nav-tabs" id="aiResultTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="analysis-content-tab" data-bs-toggle="tab" data-bs-target="#analysis-content" type="button" role="tab">分析報告</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="score-summary-tab" data-bs-toggle="tab" data-bs-target="#score-summary" type="button" role="tab">評分摘要</button>
+                            </li>
+                        </ul>
+                        
+                        <div class="tab-content mt-3">
+                            <div class="tab-pane fade show active" id="analysis-content" role="tabpanel">
+                                <div class="border rounded p-3 bg-light">
+                                    <pre id="aiAnalysisContent" style="white-space: pre-wrap; font-family: inherit;"></pre>
+                                </div>
+                            </div>
+                            <div class="tab-pane fade" id="score-summary" role="tabpanel">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="card">
+                                            <div class="card-body text-center">
+                                                <h5>AI 分析評分</h5>
+                                                <div id="aiScoreDisplay" class="fs-1 fw-bold text-primary">0</div>
+                                                <div id="aiComment" class="text-muted mt-2"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="card">
+                                            <div class="card-body">
+                                                <h6>應用評分到系統</h6>
+                                                <div class="form-check mb-2">
+                                                    <input class="form-check-input" type="checkbox" id="autoApplyScore" checked>
+                                                    <label class="form-check-label" for="autoApplyScore">
+                                                        自動應用評分
+                                                    </label>
+                                                </div>
+                                                <button class="btn btn-success w-100" id="applyAiScore">
+                                                    ✅ 應用評分到專業評分表
+                                                </button>
+                                                <small class="text-muted">將自動填充到對應的評分項目</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="text-center mb-4">
         <button class="btn btn-outline-light" type="button" data-bs-toggle="collapse" data-bs-target="#debugLog">
             顯示/隱藏 除錯日誌
@@ -192,6 +297,226 @@ document.addEventListener('DOMContentLoaded', () => {
             logEl.scrollTop = logEl.scrollHeight;
         }
         console.log(msg);
+    }
+
+    // ================= AI 分析功能 =================
+    
+    let currentAiApiKey = '';
+    let currentAiPlatform = 'deepseek';
+    let isAiKeyVerified = false;
+
+    // 加載保存的 AI 設置
+    try {
+        const savedAiConfig = localStorage.getItem('joseph_pai_ai_config');
+        if (savedAiConfig) {
+            const config = JSON.parse(savedAiConfig);
+            document.getElementById('aiPlatform').value = config.platform || 'deepseek';
+            document.getElementById('aiApiKey').value = config.apiKey || '';
+            currentAiPlatform = config.platform || 'deepseek';
+            currentAiApiKey = config.apiKey || '';
+            isAiKeyVerified = config.verified || false;
+            updateAiButtonState();
+        }
+    } catch (e) {
+        console.error('加載AI配置失敗:', e);
+    }
+
+    // AI 平台選擇變化
+    document.getElementById('aiPlatform').addEventListener('change', function() {
+        currentAiPlatform = this.value;
+        updateAiButtonState();
+    });
+
+    // API Key 輸入變化
+    document.getElementById('aiApiKey').addEventListener('input', function() {
+        currentAiApiKey = this.value.trim();
+        updateAiButtonState();
+    });
+
+    // 驗證 API Key
+    document.getElementById('verifyAiKey').addEventListener('click', async function() {
+        if (!currentAiApiKey) {
+            alert('請輸入 API Key');
+            return;
+        }
+
+        const verifyBtn = this;
+        const originalText = verifyBtn.innerHTML;
+        verifyBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>驗證中...';
+        verifyBtn.disabled = true;
+
+        try {
+            // 簡單的格式驗證
+            if (currentAiPlatform === 'gpt' && !currentAiApiKey.startsWith('sk-')) {
+                throw new Error('OpenAI API Key 格式不正確');
+            }
+            if (currentAiPlatform === 'claude' && currentAiApiKey.length < 10) {
+                throw new Error('Claude API Key 格式不正確');
+            }
+
+            // 保存配置
+            const aiConfig = {
+                platform: currentAiPlatform,
+                apiKey: currentAiApiKey,
+                verified: true
+            };
+            localStorage.setItem('joseph_pai_ai_config', JSON.stringify(aiConfig));
+            
+            isAiKeyVerified = true;
+            updateAiButtonState();
+            
+            document.getElementById('aiKeyStatus').innerHTML = 
+                '<span class="badge bg-success">✓ 驗證成功</span>';
+            
+            log(`✅ ${currentAiPlatform} API Key 驗證成功`);
+            
+        } catch (error) {
+            document.getElementById('aiKeyStatus').innerHTML = 
+                '<span class="badge bg-danger">✗ 驗證失敗</span>';
+            log(`❌ API Key 驗證失敗: ${error.message}`);
+            alert(`驗證失敗: ${error.message}`);
+        } finally {
+            verifyBtn.innerHTML = originalText;
+            verifyBtn.disabled = false;
+        }
+    });
+
+    // AI 分析按鈕
+    document.getElementById('aiAnalyzeBtn').addEventListener('click', async function() {
+        const symbol = document.getElementById('stockSelect').value.trim();
+        if (!symbol) {
+            alert('請先選擇股票');
+            return;
+        }
+
+        if (!isAiKeyVerified || !currentAiApiKey) {
+            alert('請先驗證 API Key');
+            return;
+        }
+
+        const analysisType = document.querySelector('input[name="analysisType"]:checked').value;
+        const analyzeBtn = this;
+        const spinner = document.getElementById('aiSpinner');
+        
+        analyzeBtn.disabled = true;
+        spinner.style.display = 'inline-block';
+        
+        try {
+            log(`開始 ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析: ${symbol}`);
+            
+            const stockName = stockData.find(s => s.stock_id === symbol)?.stock_name || symbol;
+            
+            const response = await fetch('/.netlify/functions/fetch-ai-analysis', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    stockId: symbol,
+                    stockName: stockName,
+                    platform: currentAiPlatform,
+                    apiKey: currentAiApiKey,
+                    analysisType: analysisType
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`網絡請求失敗: ${response.status}`);
+            }
+
+            const result = await response.json();
+            
+            if (result.error) {
+                throw new Error(result.error);
+            }
+
+            // 顯示分析結果
+            document.getElementById('aiAnalysisContent').textContent = result.content;
+            document.getElementById('aiScoreDisplay').textContent = 
+                result.score > 0 ? `+${result.score}` : result.score;
+            document.getElementById('aiComment').textContent = result.comment;
+            
+            // 更新評分顯示顏色
+            const scoreDisplay = document.getElementById('aiScoreDisplay');
+            scoreDisplay.className = 'fs-1 fw-bold ' + 
+                (result.score > 0 ? 'text-success' : 
+                 result.score < 0 ? 'text-danger' : 'text-warning');
+            
+            // 顯示結果區域
+            document.getElementById('aiAnalysisResult').style.display = 'block';
+            
+            // 自動應用評分
+            if (document.getElementById('autoApplyScore').checked) {
+                applyAiScoreToSystem(result.score, analysisType);
+            }
+            
+            log(`✅ ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析完成，評分: ${result.score}`);
+            
+        } catch (error) {
+            log(`❌ AI 分析失敗: ${error.message}`);
+            alert(`AI 分析失敗: ${error.message}`);
+        } finally {
+            analyzeBtn.disabled = false;
+            spinner.style.display = 'none';
+        }
+    });
+
+    // 應用評分到系統
+    document.getElementById('applyAiScore').addEventListener('click', function() {
+        const score = parseInt(document.getElementById('aiScoreDisplay').textContent);
+        const analysisType = document.querySelector('input[name="analysisType"]:checked').value;
+        applyAiScoreToSystem(score, analysisType);
+    });
+
+    // 清除分析結果
+    document.getElementById('clearAiAnalysis').addEventListener('click', function() {
+        document.getElementById('aiAnalysisResult').style.display = 'none';
+        document.getElementById('aiAnalysisContent').textContent = '';
+        document.getElementById('aiScoreDisplay').textContent = '0';
+        document.getElementById('aiComment').textContent = '';
+    });
+
+    // 更新 AI 按鈕狀態
+    function updateAiButtonState() {
+        const analyzeBtn = document.getElementById('aiAnalyzeBtn');
+        analyzeBtn.disabled = !isAiKeyVerified || !currentAiApiKey;
+        
+        if (isAiKeyVerified && currentAiApiKey) {
+            document.getElementById('aiKeyStatus').innerHTML = 
+                '<span class="badge bg-success">✓ 已驗證</span>';
+        } else {
+            document.getElementById('aiKeyStatus').innerHTML = 
+                '<span class="badge bg-warning">待驗證</span>';
+        }
+    }
+
+    // 應用 AI 評分到評分系統
+    function applyAiScoreToSystem(score, analysisType) {
+        const targetField = analysisType === 'news' ? 'news' : 'risk';
+        const weight = weights[targetField] || 10;
+        
+        // 計算加權分數
+        const weightedScore = Math.round((score / 10) * weight);
+        
+        // 更新對應的評分顯示
+        const scoreElement = document.getElementById(`score_${targetField}`);
+        if (scoreElement) {
+            scoreElement.textContent = weightedScore;
+            scoreElement.className = `badge ${weightedScore >= 0 ? 'badge-pos' : 'badge-neg'} fs-5`;
+        }
+        
+        // 更新說明文字
+        const descElement = scoreElement?.closest('tr')?.querySelector('td:nth-child(4)');
+        if (descElement) {
+            const typeName = analysisType === 'news' ? '消息面' : '風險面';
+            descElement.innerHTML = `<small>AI ${typeName}分析評分: ${score} → 加權: ${weightedScore}</small>`;
+        }
+        
+        // 更新總分
+        updateTotalScore();
+        
+        log(`✅ AI ${analysisType === 'news' ? '消息面' : '風險面'}評分 ${score} 已應用到系統 (加權: ${weightedScore})`);
+        alert(`AI 評分已成功應用到${analysisType === 'news' ? '消息面' : '風險面'}！`);
     }
 
     // ================= 核心 API 函數 =================
