@@ -495,6 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
 // 測試連線按鈕 - 修復版本
+// 測試連線按鈕 - 修復版本
 document.getElementById('testConnectionBtn').addEventListener('click', async function() {
     if (!currentAiApiKey) {
         alert('請先輸入 API Key');
@@ -510,19 +511,19 @@ document.getElementById('testConnectionBtn').addEventListener('click', async fun
         log(`測試 ${currentAiPlatform} API 連線...`);
         
         // 使用簡單測試函數，不依賴股票代碼
-       const response = await fetch('/.netlify/functions/structured-analyze', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-        stockId: symbol,
-        stockName: stockName,
-        apiKey: currentAiApiKey,
-        analysisType: analysisType,
-        platform: currentAiPlatform  // 確保傳遞正確的平台參數
-    })
-});
+        const response = await fetch('/.netlify/functions/structured-analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                stockId: '2330', // 使用固定的測試股票代碼
+                stockName: '台積電',
+                apiKey: currentAiApiKey,
+                analysisType: 'news', // 使用默認的分析類型
+                platform: currentAiPlatform
+            })
+        });
 
         const result = await response.json();
         
@@ -533,7 +534,7 @@ document.getElementById('testConnectionBtn').addEventListener('click', async fun
         document.getElementById('aiKeyStatus').innerHTML = 
             '<span class="badge bg-success">✓ 連線正常</span>';
         log(`✅ ${currentAiPlatform} API 連線測試成功`);
-        alert(`✅ ${currentAiPlatform} API 連線正常！\n${result.message}`);
+        alert(`✅ ${currentAiPlatform} API 連線正常！`);
         
     } catch (error) {
         let errorMessage = '連線失敗';
@@ -545,8 +546,6 @@ document.getElementById('testConnectionBtn').addEventListener('click', async fun
             errorMessage = '請求超時';
         } else if (error.message.includes('502') || error.message.includes('503')) {
             errorMessage = '服務器暫時不可用，請稍後重試';
-        } else if (error.message.includes('symbol is not defined')) {
-            errorMessage = '測試功能配置錯誤，但API Key格式正確';
         }
         
         document.getElementById('aiKeyStatus').innerHTML = 
@@ -634,6 +633,17 @@ document.getElementById('aiAnalyzeBtn').addEventListener('click', async function
         return;
     }
 
+    // 確保股票名稱正確獲取
+    const stockSelect = document.getElementById('stockSelect');
+    const selectedOption = stockSelect.options[stockSelect.selectedIndex];
+    let stockName = selectedOption.textContent.replace(/^\d+\s/, ''); // 移除股票代碼部分
+    
+    // 如果無法從選項獲取，嘗試從 stockData 中查找
+    if (!stockName || stockName === symbol) {
+        const stockInfo = stockData.find(s => s.stock_id === symbol);
+        stockName = stockInfo ? stockInfo.stock_name : symbol;
+    }
+
     const analysisType = document.querySelector('input[name="analysisType"]:checked').value;
     const analyzeBtn = this;
     const spinner = document.getElementById('aiSpinner');
@@ -646,11 +656,9 @@ document.getElementById('aiAnalyzeBtn').addEventListener('click', async function
         `<span class="badge bg-info">🔄 ${currentAiPlatform} 分析中... (約20秒)</span>`;
     
     try {
-        log(`開始 ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析: ${symbol}, 平台: ${currentAiPlatform}`);
+        log(`開始 ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析: ${symbol} ${stockName}, 平台: ${currentAiPlatform}`);
         
-        const stockName = stockData.find(s => s.stock_id === symbol)?.stock_name || symbol;
-        
-        // 使用結構化分析函數，傳遞平台參數
+        // 使用結構化分析函數
         const response = await fetch('/.netlify/functions/structured-analyze', {
             method: 'POST',
             headers: {
@@ -661,7 +669,7 @@ document.getElementById('aiAnalyzeBtn').addEventListener('click', async function
                 stockName: stockName,
                 apiKey: currentAiApiKey,
                 analysisType: analysisType,
-                platform: currentAiPlatform  // 確保傳遞平台參數
+                platform: currentAiPlatform
             })
         });
 
