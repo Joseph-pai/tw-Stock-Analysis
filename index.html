@@ -509,16 +509,20 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             log(`測試 ${currentAiPlatform} API 連線...`);
             
-            // 使用簡單測試函數
-            const response = await fetch('/.netlify/functions/simple-deepseek', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    apiKey: currentAiApiKey
-                })
-            });
+   // 在 aiAnalyzeBtn 的 click 事件處理中，修改請求體：
+const response = await fetch('/.netlify/functions/structured-analyze', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+        stockId: symbol,
+        stockName: stockName,
+        apiKey: currentAiApiKey,
+        analysisType: analysisType,
+        platform: currentAiPlatform  // 添加平台參數
+    })
+});
 
             const result = await response.json();
             
