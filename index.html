@@ -845,7 +845,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (inputEl) {
                 inputEl.value = ''; // 清空輸入框
-                inputEl.placeholder = '手動輸入'; // 統一的placeholder
+                inputEl.placeholder = ''; // 統一的placeholder
             }
         };
 
@@ -1235,7 +1235,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div id="finalScore"><h1 class="score-big">--</h1></div>
                     <p class="lead">整體市場趨勢評分 <span id="weightHint" style="color:yellow"></span></p>
                     <p class="fs-5">現價 ${price} ｜ 期間漲跌 ${risePercent}%</p>
-                    <p class="data-source">資料來源: 股價(Yahoo) 財報(${finSource})</p>
+                    <p class="data-source">資料來源: FinMind TWSE台灣證卷交易所</p>
                 </div>
 
                 <div class="row g-4">
