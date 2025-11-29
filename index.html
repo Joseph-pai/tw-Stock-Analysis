@@ -437,7 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // API 平台鏈接映射
     const apiPlatformLinks = {
         'deepseek': 'https://platform.deepseek.com/api_keys',
-        'gpt': 'https://platform.openai.com/api-keys',
+        'gpt': 'https://platform.openai.com/api-keys', 
         'gemini': 'https://aistudio.google.com/app/apikey',
         'claude': 'https://console.anthropic.com/settings/keys',
         'grok': 'https://console.x.ai/keys'
@@ -456,25 +456,95 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentAiPlatform = 'deepseek';
     let isAiKeyVerified = false;
 
-    // 加載保存的 AI 設置
-    try {
-        const savedAiConfig = localStorage.getItem('joseph_pai_ai_config');
-        if (savedAiConfig) {
-            const config = JSON.parse(savedAiConfig);
-            document.getElementById('aiPlatform').value = config.platform || 'deepseek';
-            document.getElementById('aiApiKey').value = config.apiKey || '';
-            currentAiPlatform = config.platform || 'deepseek';
-            currentAiApiKey = config.apiKey || '';
-            isAiKeyVerified = config.verified || false;
-            updateAiButtonState();
-            
-            // 更新提示
-            const hint = apiKeyHints[currentAiPlatform] || '請輸入有效的API Key';
-            document.getElementById('apiKeyHint').textContent = hint;
+    // 加載保存的 AI 設置 - 修改為支持多平台
+    function loadAiConfig() {
+        try {
+            const savedAiConfig = localStorage.getItem('joseph_pai_ai_config');
+            if (savedAiConfig) {
+                const config = JSON.parse(savedAiConfig);
+                // 設置當前平台
+                currentAiPlatform = config.currentPlatform || 'deepseek';
+                document.getElementById('aiPlatform').value = currentAiPlatform;
+                
+                // 加載當前平台的 API Key
+                const platformKey = config[`${currentAiPlatform}_apiKey`] || '';
+                document.getElementById('aiApiKey').value = platformKey;
+                currentAiApiKey = platformKey;
+                
+                // 更新驗證狀態
+                isAiKeyVerified = config[`${currentAiPlatform}_verified`] || false;
+                updateAiButtonState();
+                
+                // 更新提示
+                const hint = apiKeyHints[currentAiPlatform] || '請輸入有效的API Key';
+                document.getElementById('apiKeyHint').textContent = hint;
+                
+                log(`✅ 已載入 ${currentAiPlatform} API 配置`);
+            }
+        } catch (e) {
+            console.error('加載AI配置失敗:', e);
         }
-    } catch (e) {
-        console.error('加載AI配置失敗:', e);
     }
+
+    // 保存 AI 配置 - 修改為支持多平台
+    function saveAiConfig(platform, apiKey, verified = false) {
+        try {
+            let config = {};
+            const savedConfig = localStorage.getItem('joseph_pai_ai_config');
+            if (savedConfig) {
+                config = JSON.parse(savedConfig);
+            }
+            
+            // 保存當前平台配置
+            config.currentPlatform = platform;
+            config[`${platform}_apiKey`] = apiKey;
+            config[`${platform}_verified`] = verified;
+            
+            localStorage.setItem('joseph_pai_ai_config', JSON.stringify(config));
+            log(`✅ 已保存 ${platform} API 配置`);
+        } catch (e) {
+            console.error('保存AI配置失敗:', e);
+            log(`❌ 保存AI配置失敗: ${e.message}`);
+        }
+    }
+
+    // 獲取指定平台的 API Key
+    function getPlatformApiKey(platform) {
+        try {
+            const savedConfig = localStorage.getItem('joseph_pai_ai_config');
+            if (savedConfig) {
+                const config = JSON.parse(savedConfig);
+                return config[`${platform}_apiKey`] || '';
+            }
+        } catch (e) {
+            console.error('獲取平台API Key失敗:', e);
+        }
+        return '';
+    }
+
+    // 平台變化時更新提示和 API Key
+    document.getElementById('aiPlatform').addEventListener('change', function() {
+        const newPlatform = this.value;
+        currentAiPlatform = newPlatform;
+        
+        // 加載新平台的 API Key
+        const platformApiKey = getPlatformApiKey(newPlatform);
+        document.getElementById('aiApiKey').value = platformApiKey;
+        currentAiApiKey = platformApiKey;
+        
+        // 更新驗證狀態
+        const hint = apiKeyHints[newPlatform] || '請輸入有效的API Key';
+        document.getElementById('apiKeyHint').textContent = hint;
+        
+        // 重置驗證狀態
+        isAiKeyVerified = false;
+        updateAiButtonState();
+        
+        document.getElementById('aiKeyStatus').innerHTML = 
+            '<span class="badge bg-info">已切換平台</span>';
+        
+        log(`🔄 切換到 ${newPlatform} 平台`);
+    });
 
     // 獲取API鏈接
     document.getElementById('getApiLink').addEventListener('click', function(e) {
@@ -486,77 +556,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 平台變化時更新提示
-    document.getElementById('aiPlatform').addEventListener('change', function() {
-        currentAiPlatform = this.value;
-        const hint = apiKeyHints[currentAiPlatform] || '請輸入有效的API Key';
-        document.getElementById('apiKeyHint').textContent = hint;
+    // API Key 輸入變化
+    document.getElementById('aiApiKey').addEventListener('input', function() {
+        currentAiApiKey = this.value.trim();
         updateAiButtonState();
+        
+        // 清除驗證狀態
+        if (currentAiApiKey === '') {
+            document.getElementById('aiKeyStatus').innerHTML = '';
+            isAiKeyVerified = false;
+        }
     });
-
-// 測試連線按鈕 - 修復版本
-// 測試連線按鈕 - 修復版本
-document.getElementById('testConnectionBtn').addEventListener('click', async function() {
-    if (!currentAiApiKey) {
-        alert('請先輸入 API Key');
-        return;
-    }
-
-    const testBtn = this;
-    const originalText = testBtn.innerHTML;
-    testBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>測試中...';
-    testBtn.disabled = true;
-
-    try {
-        log(`測試 ${currentAiPlatform} API 連線...`);
-        
-        // 使用簡單測試函數，不依賴股票代碼
-        const response = await fetch('/.netlify/functions/structured-analyze', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                stockId: '2330', // 使用固定的測試股票代碼
-                stockName: '台積電',
-                apiKey: currentAiApiKey,
-                analysisType: 'news', // 使用默認的分析類型
-                platform: currentAiPlatform
-            })
-        });
-
-        const result = await response.json();
-        
-        if (result.error) {
-            throw new Error(result.error);
-        }
-
-        document.getElementById('aiKeyStatus').innerHTML = 
-            '<span class="badge bg-success">✓ 連線正常</span>';
-        log(`✅ ${currentAiPlatform} API 連線測試成功`);
-        alert(`✅ ${currentAiPlatform} API 連線正常！`);
-        
-    } catch (error) {
-        let errorMessage = '連線失敗';
-        if (error.message.includes('API Key') || error.message.includes('401')) {
-            errorMessage = 'API Key 無效或已過期';
-        } else if (error.message.includes('network') || error.message.includes('fetch') || error.message.includes('ECONNREFUSED')) {
-            errorMessage = '網絡連線失敗，請檢查網絡連接';
-        } else if (error.message.includes('timeout')) {
-            errorMessage = '請求超時';
-        } else if (error.message.includes('502') || error.message.includes('503')) {
-            errorMessage = '服務器暫時不可用，請稍後重試';
-        }
-        
-        document.getElementById('aiKeyStatus').innerHTML = 
-            `<span class="badge bg-danger">✗ ${errorMessage}</span>`;
-        log(`❌ API 連線測試失敗: ${error.message}`);
-        alert(`❌ ${errorMessage}\n\n詳細信息: ${error.message}`);
-    } finally {
-        testBtn.innerHTML = originalText;
-        testBtn.disabled = false;
-    }
-});
 
     // 改進的 API Key 驗證
     document.getElementById('verifyAiKey').addEventListener('click', async function() {
@@ -579,13 +589,8 @@ document.getElementById('testConnectionBtn').addEventListener('click', async fun
                 throw new Error('Claude API Key 格式不正確，應該以 sk-ant- 開頭');
             }
 
-            // 保存配置
-            const aiConfig = {
-                platform: currentAiPlatform,
-                apiKey: currentAiApiKey,
-                verified: true
-            };
-            localStorage.setItem('joseph_pai_ai_config', JSON.stringify(aiConfig));
+            // 保存配置到本地存儲
+            saveAiConfig(currentAiPlatform, currentAiApiKey, true);
             
             isAiKeyVerified = true;
             updateAiButtonState();
@@ -593,7 +598,7 @@ document.getElementById('testConnectionBtn').addEventListener('click', async fun
             document.getElementById('aiKeyStatus').innerHTML = 
                 '<span class="badge bg-success">✓ 格式驗證成功</span>';
             
-            log(`✅ ${currentAiPlatform} API Key 格式驗證成功`);
+            log(`✅ ${currentAiPlatform} API Key 格式驗證成功並已保存`);
             
         } catch (error) {
             document.getElementById('aiKeyStatus').innerHTML = 
@@ -606,124 +611,184 @@ document.getElementById('testConnectionBtn').addEventListener('click', async fun
         }
     });
 
-    // API Key 輸入變化
-    document.getElementById('aiApiKey').addEventListener('input', function() {
-        currentAiApiKey = this.value.trim();
-        updateAiButtonState();
-        
-        // 清除驗證狀態
-        if (currentAiApiKey === '') {
-            document.getElementById('aiKeyStatus').innerHTML = '';
-            isAiKeyVerified = false;
+    // 測試連線按鈕 - 修復版本
+    document.getElementById('testConnectionBtn').addEventListener('click', async function() {
+        if (!currentAiApiKey) {
+            alert('請先輸入 API Key');
+            return;
+        }
+
+        const testBtn = this;
+        const originalText = testBtn.innerHTML;
+        testBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>測試中...';
+        testBtn.disabled = true;
+
+        try {
+            log(`測試 ${currentAiPlatform} API 連線...`);
+            
+            // 使用簡單測試函數，不依賴股票代碼
+            const response = await fetch('/.netlify/functions/structured-analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    stockId: '2330', // 使用固定的測試股票代碼
+                    stockName: '台積電',
+                    apiKey: currentAiApiKey,
+                    analysisType: 'news',
+                    platform: currentAiPlatform
+                })
+            });
+
+            const result = await response.json();
+            
+            if (result.error) {
+                throw new Error(result.error);
+            }
+
+            // 如果測試成功，保存驗證狀態
+            saveAiConfig(currentAiPlatform, currentAiApiKey, true);
+            isAiKeyVerified = true;
+            updateAiButtonState();
+            
+            document.getElementById('aiKeyStatus').innerHTML = 
+                '<span class="badge bg-success">✓ 連線正常</span>';
+            log(`✅ ${currentAiPlatform} API 連線測試成功`);
+            alert(`✅ ${currentAiPlatform} API 連線正常！`);
+            
+        } catch (error) {
+            document.getElementById('aiKeyStatus').innerHTML = 
+                `<span class="badge bg-danger">✗ 連線失敗</span>`;
+            log(`❌ API 連線測試失敗: ${error.message}`);
+            alert(`❌ 連線失敗\n\n詳細信息: ${error.message}`);
+        } finally {
+            testBtn.innerHTML = originalText;
+            testBtn.disabled = false;
         }
     });
 
-    // 改進的 AI 分析錯誤處理
+    // 更新 AI 按鈕狀態
+    function updateAiButtonState() {
+        const analyzeBtn = document.getElementById('aiAnalyzeBtn');
+        analyzeBtn.disabled = !currentAiApiKey; // 只要有 API Key 就可以分析，不強制驗證
+        
+        if (isAiKeyVerified && currentAiApiKey) {
+            document.getElementById('aiKeyStatus').innerHTML = 
+                '<span class="badge bg-success">✓ 已驗證</span>';
+        } else if (currentAiApiKey) {
+            document.getElementById('aiKeyStatus').innerHTML = 
+                '<span class="badge bg-warning">待驗證</span>';
+        } else {
+            document.getElementById('aiKeyStatus').innerHTML = 
+                '<span class="badge bg-secondary">未設定</span>';
+        }
+    }
+
     // AI分析按鈕 - 使用結構化分析
-// 在 AI 分析按鈕的點擊事件中，添加平台檢查
-document.getElementById('aiAnalyzeBtn').addEventListener('click', async function() {
-    const symbol = document.getElementById('stockSelect').value.trim();
-    if (!symbol) {
-        alert('請先選擇股票');
-        return;
-    }
-
-    if (!currentAiApiKey) {
-        alert('請先輸入 API Key');
-        return;
-    }
-
-    // 確保股票名稱正確獲取
-    const stockSelect = document.getElementById('stockSelect');
-    const selectedOption = stockSelect.options[stockSelect.selectedIndex];
-    let stockName = selectedOption.textContent.replace(/^\d+\s/, ''); // 移除股票代碼部分
-    
-    // 如果無法從選項獲取，嘗試從 stockData 中查找
-    if (!stockName || stockName === symbol) {
-        const stockInfo = stockData.find(s => s.stock_id === symbol);
-        stockName = stockInfo ? stockInfo.stock_name : symbol;
-    }
-
-    const analysisType = document.querySelector('input[name="analysisType"]:checked').value;
-    const analyzeBtn = this;
-    const spinner = document.getElementById('aiSpinner');
-    
-    analyzeBtn.disabled = true;
-    spinner.style.display = 'inline-block';
-    
-    // 顯示當前使用的平台
-    document.getElementById('aiKeyStatus').innerHTML = 
-        `<span class="badge bg-info">🔄 ${currentAiPlatform} 分析中... (約20秒)</span>`;
-    
-    try {
-        log(`開始 ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析: ${symbol} ${stockName}, 平台: ${currentAiPlatform}`);
-        
-        // 使用結構化分析函數
-        const response = await fetch('/.netlify/functions/structured-analyze', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                stockId: symbol,
-                stockName: stockName,
-                apiKey: currentAiApiKey,
-                analysisType: analysisType,
-                platform: currentAiPlatform
-            })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `HTTP ${response.status}`);
+    document.getElementById('aiAnalyzeBtn').addEventListener('click', async function() {
+        const symbol = document.getElementById('stockSelect').value.trim();
+        if (!symbol) {
+            alert('請先選擇股票');
+            return;
         }
 
-        const result = await response.json();
-        
-        if (result.error) {
-            throw new Error(result.error);
+        if (!currentAiApiKey) {
+            alert('請先輸入 API Key');
+            return;
         }
 
-        // 顯示結構化結果
-        document.getElementById('aiAnalysisContent').textContent = result.content;
-        document.getElementById('aiScoreDisplay').textContent = 
-            result.score > 0 ? `+${result.score}` : result.score;
-        document.getElementById('aiComment').textContent = result.comment;
+        // 確保股票名稱正確獲取
+        const stockSelect = document.getElementById('stockSelect');
+        const selectedOption = stockSelect.options[stockSelect.selectedIndex];
+        let stockName = selectedOption.textContent.replace(/^\d+\s/, ''); // 移除股票代碼部分
         
-        // 更新評分顯示
-        const scoreDisplay = document.getElementById('aiScoreDisplay');
-        scoreDisplay.className = 'fs-1 fw-bold ' + 
-            (result.score > 0 ? 'text-success' : 
-             result.score < 0 ? 'text-danger' : 'text-warning');
-        
-        document.getElementById('aiAnalysisResult').style.display = 'block';
-        
-        // 顯示評分明細
-        displayScoreDetails(analysisType, result.content, result.score, stockName);
-        
-        // 保存分析歷史
-        saveAnalysisHistory(analysisType, result, stockName);
-        
-        // 自動應用評分
-        if (document.getElementById('autoApplyScore').checked) {
-            applyAiScoreToSystem(result.score, analysisType);
+        // 如果無法從選項獲取，嘗試從 stockData 中查找
+        if (!stockName || stockName === symbol) {
+            const stockInfo = stockData.find(s => s.stock_id === symbol);
+            stockName = stockInfo ? stockInfo.stock_name : symbol;
         }
+
+        const analysisType = document.querySelector('input[name="analysisType"]:checked').value;
+        const analyzeBtn = this;
+        const spinner = document.getElementById('aiSpinner');
         
+        analyzeBtn.disabled = true;
+        spinner.style.display = 'inline-block';
+        
+        // 顯示當前使用的平台
         document.getElementById('aiKeyStatus').innerHTML = 
-            `<span class="badge bg-success">✓ ${currentAiPlatform} 分析完成</span>`;
+            `<span class="badge bg-info">🔄 ${currentAiPlatform} 分析中... (約20秒)</span>`;
         
-        log(`✅ ${currentAiPlatform} ${analysisType === 'news' ? '消息面' : '風險面'} AI分析完成，評分: ${result.score}`);
-        
-    } catch (error) {
-        document.getElementById('aiKeyStatus').innerHTML = 
-            `<span class="badge bg-danger">✗ ${currentAiPlatform} 分析失敗</span>`;
-        log(`❌ ${currentAiPlatform} AI分析失敗: ${error.message}`);
-        alert(`${currentAiPlatform} 分析失敗: ${error.message}`);
-    } finally {
-        analyzeBtn.disabled = false;
-        spinner.style.display = 'none';
-    }
-});
+        try {
+            log(`開始 ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析: ${symbol} ${stockName}, 平台: ${currentAiPlatform}`);
+            
+            // 使用結構化分析函數
+            const response = await fetch('/.netlify/functions/structured-analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    stockId: symbol,
+                    stockName: stockName,
+                    apiKey: currentAiApiKey,
+                    analysisType: analysisType,
+                    platform: currentAiPlatform
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || `HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+            
+            if (result.error) {
+                throw new Error(result.error);
+            }
+
+            // 顯示結構化結果
+            document.getElementById('aiAnalysisContent').textContent = result.content;
+            document.getElementById('aiScoreDisplay').textContent = 
+                result.score > 0 ? `+${result.score}` : result.score;
+            document.getElementById('aiComment').textContent = result.comment;
+            
+            // 更新評分顯示
+            const scoreDisplay = document.getElementById('aiScoreDisplay');
+            scoreDisplay.className = 'fs-1 fw-bold ' + 
+                (result.score > 0 ? 'text-success' : 
+                 result.score < 0 ? 'text-danger' : 'text-warning');
+            
+            document.getElementById('aiAnalysisResult').style.display = 'block';
+            
+            // 顯示評分明細
+            displayScoreDetails(analysisType, result.content, result.score, stockName);
+            
+            // 保存分析歷史
+            saveAnalysisHistory(analysisType, result, stockName);
+            
+            // 自動應用評分
+            if (document.getElementById('autoApplyScore').checked) {
+                applyAiScoreToSystem(result.score, analysisType);
+            }
+            
+            document.getElementById('aiKeyStatus').innerHTML = 
+                `<span class="badge bg-success">✓ ${currentAiPlatform} 分析完成</span>`;
+            
+            log(`✅ ${currentAiPlatform} ${analysisType === 'news' ? '消息面' : '風險面'} AI分析完成，評分: ${result.score}`);
+            
+        } catch (error) {
+            document.getElementById('aiKeyStatus').innerHTML = 
+                `<span class="badge bg-danger">✗ ${currentAiPlatform} 分析失敗</span>`;
+            log(`❌ ${currentAiPlatform} AI分析失敗: ${error.message}`);
+            alert(`${currentAiPlatform} 分析失敗: ${error.message}`);
+        } finally {
+            analyzeBtn.disabled = false;
+            spinner.style.display = 'none';
+        }
+    });
 
     // 應用評分到系統
     document.getElementById('applyAiScore').addEventListener('click', function() {
@@ -742,20 +807,6 @@ document.getElementById('aiAnalyzeBtn').addEventListener('click', async function
         analysisHistory.news = null;
         analysisHistory.risk = null;
     });
-
-    // 更新 AI 按鈕狀態
-    function updateAiButtonState() {
-        const analyzeBtn = document.getElementById('aiAnalyzeBtn');
-        analyzeBtn.disabled = !isAiKeyVerified || !currentAiApiKey;
-        
-        if (isAiKeyVerified && currentAiApiKey) {
-            document.getElementById('aiKeyStatus').innerHTML = 
-                '<span class="badge bg-success">✓ 已驗證</span>';
-        } else {
-            document.getElementById('aiKeyStatus').innerHTML = 
-                '<span class="badge bg-warning">待驗證</span>';
-        }
-    }
 
     // 應用 AI 評分到評分系統
     function applyAiScoreToSystem(score, analysisType) {
@@ -809,7 +860,7 @@ document.getElementById('aiAnalyzeBtn').addEventListener('click', async function
         });
     });
 
-    // ================= 新增：顯示評分明細函數 =================
+    // ================= 顯示評分明細函數 =================
     function displayScoreDetails(analysisType, content, score, stockName) {
         const newsTable = document.getElementById('newsScoreTable');
         const riskTable = document.getElementById('riskScoreTable');
@@ -1017,6 +1068,9 @@ document.getElementById('aiAnalyzeBtn').addEventListener('click', async function
             return `${stockName}在風險面上獲得 ${score} 分。風險因素較為顯著，特別是${risks.slice(0,2).join('、')}等問題。投資者需密切監控風險變化。`;
         }
     }
+
+    // 加載 AI 配置
+    loadAiConfig();
 
     // ================= 核心 API 函數 =================
 
