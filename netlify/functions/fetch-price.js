@@ -15,7 +15,7 @@ exports.handler = async (event, context) => {
         let result;
         let source;
         
-        // 三層備援邏輯（保持不變）
+        // 三層備援邏輯
         try {
             result = await fetchFromFinMind(symbol);
             source = 'finmind';
@@ -31,7 +31,6 @@ exports.handler = async (event, context) => {
                     source = 'tpex';
                 } catch (error) {
                     console.log('TPEx failed, trying Yahoo...');
-                    // 對 Yahoo 需要特殊處理格式
                     result = await fetchFromYahoo(symbol);
                     source = 'yahoo';
                 }
@@ -40,7 +39,6 @@ exports.handler = async (event, context) => {
 
         // 統一返回格式，兼容前端預期
         const compatibleResult = {
-            // 保持原有 Yahoo 格式的兼容性
             chart: {
                 result: [{
                     meta: {
@@ -50,16 +48,21 @@ exports.handler = async (event, context) => {
                         regularMarketVolume: result.volume,
                         regularMarketTime: new Date(result.date).getTime() / 1000
                     },
-                    timestamp: [new Date(result.date).getTime() / 1000],
+                    timestamp: result.historicalData ? 
+                        result.historicalData.map(d => new Date(d.date).getTime() / 1000) : 
+                        [new Date(result.date).getTime() / 1000],
                     indicators: {
                         quote: [{
-                            close: [result.price],
-                            volume: [result.volume]
+                            close: result.historicalData ? 
+                                result.historicalData.map(d => parseFloat(d.close)) : 
+                                [result.price],
+                            volume: result.historicalData ? 
+                                result.historicalData.map(d => d.Trading_volume || d.volume) : 
+                                [result.volume]
                         }]
                     }
                 }]
             },
-            // 新增的統一格式
             unified: result,
             source: source
         };
@@ -83,9 +86,9 @@ exports.handler = async (event, context) => {
     }
 };
 
-// 各數據源函數保持不變
+// 1. FinMind 數據源 - 修復：獲取1年歷史數據
 async function fetchFromFinMind(stockId) {
-    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${stockId}&start_date=${getDate(-7)}`;
+    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${stockId}&start_date=${getDate(-365)}`;
     
     const response = await fetch(url);
     if (!response.ok) throw new Error(`FinMind API失敗: ${response.status}`);
@@ -101,10 +104,12 @@ async function fetchFromFinMind(stockId) {
         changePercent: ((latest.change / (latest.close - latest.change)) * 100).toFixed(2),
         volume: latest.Trading_volume,
         date: latest.date,
+        historicalData: data.data, // 新增完整的歷史數據
         source: 'finmind'
     };
 }
 
+// 2. TWSE 數據源
 async function fetchFromTWSE(stockId) {
     const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${stockId}.tw|otc_${stockId}.tw`;
     
@@ -129,6 +134,7 @@ async function fetchFromTWSE(stockId) {
     };
 }
 
+// 3. TPEx 興櫃數據源
 async function fetchFromTPEx(stockId) {
     const url = `https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php?l=zh-tw&o=json&stkno=${stockId}`;
     
@@ -153,10 +159,10 @@ async function fetchFromTPEx(stockId) {
     };
 }
 
+// 4. Yahoo Finance 數據源
 async function fetchFromYahoo(symbol) {
-    // 確保符號格式正確
     const formattedSymbol = symbol.includes('.') ? symbol : `${symbol}.TW`;
-    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${formattedSymbol}?interval=1d&range=1d`;
+    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${formattedSymbol}?interval=1d&range=1y`; // 改為1年範圍
     
     const response = await fetch(yahooUrl);
     if (!response.ok) throw new Error(`Yahoo API失敗: ${response.status}`);
@@ -168,6 +174,13 @@ async function fetchFromYahoo(symbol) {
     const price = result.meta.regularMarketPrice;
     const previousClose = result.meta.previousClose;
     
+    // 提取歷史數據
+    const historicalData = result.timestamp.map((timestamp, index) => ({
+        date: new Date(timestamp * 1000).toISOString().split('T')[0],
+        close: result.indicators.quote[0].close[index],
+        volume: result.indicators.quote[0].volume[index]
+    }));
+    
     return {
         stockId: symbol,
         price: price,
@@ -175,6 +188,7 @@ async function fetchFromYahoo(symbol) {
         changePercent: ((price - previousClose) / previousClose * 100).toFixed(2),
         volume: result.meta.regularMarketVolume,
         date: new Date(result.meta.regularMarketTime * 1000).toISOString().split('T')[0],
+        historicalData: historicalData,
         source: 'yahoo'
     };
 }
