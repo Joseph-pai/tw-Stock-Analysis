@@ -1,21 +1,22 @@
 [build]
-  # 修正：指向正確的 functions 路徑
-  publish = "public"  # 或指向你的 HTML 檔案所在目錄
-  functions = "netify/functions"  # 配合你的實際目錄名稱
+  # 靜態檔案發布目錄
+  publish = "/"
+  # Netlify Functions 的目錄
+  functions = "netlify/functions"
 
+# 函數全域設定區塊
 [functions]
-  # 修正：timeout 應該放在這裡，不是子表格
-  timeout = 20
+  # 移除 top-level 的 timeout 設定，因為它必須位於子表格內
 
+# 函數預設設定子表格 (此為設定所有 Functions 的執行逾時時間)
+[functions."*"]
+  # 函數的執行時間限制 (單位為秒)。
+  # 設定為 20 秒，確保抓取外部 API 數據有足夠時間。
+  timeout = 20
+  
 # 設定 /api/* 請求代理到我們的 Functions 裡
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
   force = true
-
-# 可選：SPA 支援（如果前端是單頁應用）
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
