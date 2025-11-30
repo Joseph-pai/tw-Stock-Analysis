@@ -2,19 +2,7 @@
   "name": "tw-stock-analyzer",
   "version": "1.0.0",
   "description": "Taiwan Stock Analyzer using Netlify Functions for data fetching.",
-  "main": "index.js",
-  "scripts": {
-    "dev": "netlify dev",
-    "build": "echo 'No build step needed'",
-    "prebuild": "npm install"
-  },
   "dependencies": {
     "node-fetch": "^2.6.7"
-  },
-  "devDependencies": {
-    "@netlify/functions": "^1.6.0"
-  },
-  "engines": {
-    "node": ">=14.0.0"
   }
 }
