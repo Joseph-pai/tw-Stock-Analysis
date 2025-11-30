@@ -12,7 +12,7 @@ exports.handler = async (event, context) => {
     const type = event.queryStringParameters?.type;
     const stockId = event.queryStringParameters?.stock_id;
 
-    console.log(`收到請求: type=${type}, stock_id=${stockId}`);
+    console.log(`收到TWSE請求: type=${type}, stock_id=${stockId}`);
 
     // === 結構化財務數據查詢 ===
     if (type === 'financials' && stockId) {
@@ -46,82 +46,213 @@ exports.handler = async (event, context) => {
 
     const targetUrls = sources[type];
     if (!targetUrls) {
-        return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid type' }) };
+        return { 
+            statusCode: 400, 
+            headers, 
+            body: JSON.stringify({ 
+                error: 'Invalid type',
+                availableTypes: Object.keys(sources)
+            }) 
+        };
     }
 
     try {
-        const requests = targetUrls.map(url => fetch(url).then(res => {
-            if (!res.ok) return [];
-            return res.json().catch(() => []);
-        }).catch(() => []));
+        const requests = targetUrls.map(url => 
+            fetchWithTimeout(url, 10000) // 10秒超時
+                .then(res => {
+                    if (!res.ok) {
+                        console.warn(`TWSE API ${url} 響應失敗: ${res.status}`);
+                        return [];
+                    }
+                    return res.json().catch(() => {
+                        console.warn(`TWSE API ${url} JSON解析失敗`);
+                        return [];
+                    });
+                })
+                .catch(error => {
+                    console.warn(`TWSE API ${url} 請求失敗:`, error.message);
+                    return [];
+                })
+        );
         
         const results = await Promise.all(requests);
-        const combinedData = results.flat().filter(item => item && (item['公司代號'] || item['公司代碼']));
+        const combinedData = results.flat().filter(item => 
+            item && (item['公司代號'] || item['公司代碼'])
+        );
+
+        console.log(`TWSE原始數據查詢成功: type=${type}, 數據量=${combinedData.length}`);
 
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify(combinedData),
+            body: JSON.stringify({
+                data: combinedData,
+                count: combinedData.length,
+                source: 'twse',
+                type: type
+            }),
         };
     } catch (error) {
-        console.error('原始數據獲取錯誤:', error);
-        return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
+        console.error('TWSE原始數據獲取錯誤:', error);
+        return { 
+            statusCode: 500, 
+            headers, 
+            body: JSON.stringify({ 
+                error: `TWSE數據獲取失敗: ${error.message}`,
+                type: type
+            }) 
+        };
     }
 };
 
 // === 核心：結構化財務數據處理 ===
 async function getStructuredFinancials(stockId, headers) {
     try {
-        console.log(`開始獲取股票 ${stockId} 的結構化財務數據`);
+        console.log(`開始獲取股票 ${stockId} 的TWSE結構化財務數據`);
 
-        // 1. 並行抓取所有需要的數據源
+        // 1. 並行抓取所有需要的數據源（帶超時和錯誤處理）
         const [incomeRes, balanceRes, revenueRes, ratioRes] = await Promise.all([
             // 綜合損益表（包含 EPS、淨利）
             Promise.all([
-                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci'),
-                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_fh'),
-                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd'),
-                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins')
-            ]).then(responses => Promise.all(responses.map(r => r.ok ? r.json() : []))),
+                fetchWithTimeout('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci', 10000),
+                fetchWithTimeout('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_fh', 10000),
+                fetchWithTimeout('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_bd', 10000),
+                fetchWithTimeout('https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ins', 10000)
+            ]).then(async (responses) => {
+                const results = [];
+                for (const response of responses) {
+                    if (response.ok) {
+                        try {
+                            const data = await response.json();
+                            results.push(data);
+                        } catch (e) {
+                            console.warn('損益表JSON解析失敗:', e.message);
+                            results.push([]);
+                        }
+                    } else {
+                        results.push([]);
+                    }
+                }
+                return results;
+            }).catch(() => [[], [], [], []]),
             
             // 資產負債表（包含股東權益）
             Promise.all([
-                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_ci'),
-                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_fh'),
-                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_bd'),
-                fetch('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_ins')
-            ]).then(responses => Promise.all(responses.map(r => r.ok ? r.json() : []))),
+                fetchWithTimeout('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_ci', 10000),
+                fetchWithTimeout('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_fh', 10000),
+                fetchWithTimeout('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_bd', 10000),
+                fetchWithTimeout('https://openapi.twse.com.tw/v1/opendata/t187ap07_L_ins', 10000)
+            ]).then(async (responses) => {
+                const results = [];
+                for (const response of responses) {
+                    if (response.ok) {
+                        try {
+                            const data = await response.json();
+                            results.push(data);
+                        } catch (e) {
+                            console.warn('資產負債表JSON解析失敗:', e.message);
+                            results.push([]);
+                        }
+                    } else {
+                        results.push([]);
+                    }
+                }
+                return results;
+            }).catch(() => [[], [], [], []]),
             
             // 月營收（包含月/年營收增率）
-            fetch('https://openapi.twse.com.tw/v1/opendata/t187ap05_L')
-                .then(r => r.ok ? r.json() : [])
+            fetchWithTimeout('https://openapi.twse.com.tw/v1/opendata/t187ap05_L', 10000)
+                .then(async r => {
+                    if (!r.ok) return [];
+                    try {
+                        return await r.json();
+                    } catch (e) {
+                        console.warn('月營收JSON解析失敗:', e.message);
+                        return [];
+                    }
+                })
                 .catch(() => []),
             
             // 營益分析（包含毛利率）
-            fetch('https://openapi.twse.com.tw/v1/opendata/t187ap17_L')
-                .then(r => r.ok ? r.json() : [])
+            fetchWithTimeout('https://openapi.twse.com.tw/v1/opendata/t187ap17_L', 10000)
+                .then(async r => {
+                    if (!r.ok) return [];
+                    try {
+                        return await r.json();
+                    } catch (e) {
+                        console.warn('營益分析JSON解析失敗:', e.message);
+                        return [];
+                    }
+                })
                 .catch(() => [])
         ]);
 
         // 2. 合併並過濾該股票的數據
-        const allIncome = incomeRes.flat().filter(row => row['公司代號'] === stockId);
-        const allBalance = balanceRes.flat().filter(row => row['公司代號'] === stockId);
+        const allIncome = incomeRes.flat().filter(row => 
+            row && row['公司代號'] === stockId
+        );
+        const allBalance = balanceRes.flat().filter(row => 
+            row && row['公司代號'] === stockId
+        );
         const allRevenue = Array.isArray(revenueRes) ? revenueRes.filter(row => 
-            row['公司代號'] === stockId
+            row && row['公司代號'] === stockId
         ) : [];
         const allRatio = Array.isArray(ratioRes) ? ratioRes.filter(row => 
-            row['公司代號'] === stockId
+            row && row['公司代號'] === stockId
         ) : [];
 
-        console.log(`找到數據: 損益表 ${allIncome.length}, 資產負債表 ${allBalance.length}, 月營收 ${allRevenue.length}, 營益分析 ${allRatio.length}`);
+        console.log(`TWSE數據統計: 損益表 ${allIncome.length}, 資產負債表 ${allBalance.length}, 月營收 ${allRevenue.length}, 營益分析 ${allRatio.length}`);
 
-        // 3. 解析並結構化數據
+        // 3. 檢查是否有足夠的數據
+        if (allIncome.length === 0 && allBalance.length === 0 && allRevenue.length === 0 && allRatio.length === 0) {
+            console.log(`TWSE無股票 ${stockId} 的財務數據`);
+            return {
+                statusCode: 404,
+                headers,
+                body: JSON.stringify({ 
+                    error: `TWSE無此股票財務數據`,
+                    stockId: stockId,
+                    source: 'twse'
+                })
+            };
+        }
+
+        // 4. 解析並結構化數據
         const result = parseFinancialData(allIncome, allBalance, allRevenue, allRatio);
 
+        // 5. 檢查解析後的數據是否有效
+        const hasValidData = 
+            result.eps.year !== null || 
+            Object.keys(result.eps.quarters).length > 0 ||
+            result.roe.year !== null || 
+            Object.keys(result.roe.quarters).length > 0 ||
+            result.revenueGrowth.year !== null ||
+            Object.keys(result.revenueGrowth.months).length > 0;
+
+        if (!hasValidData) {
+            console.log(`TWSE股票 ${stockId} 解析後無有效財務指標`);
+            return {
+                statusCode: 404,
+                headers,
+                body: JSON.stringify({ 
+                    error: `TWSE無有效財務指標數據`,
+                    stockId: stockId,
+                    source: 'twse',
+                    debug: result._debug
+                })
+            };
+        }
+
+        console.log(`TWSE結構化財務數據查詢成功: ${stockId}`);
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify(result)
+            body: JSON.stringify({
+                ...result,
+                stockId: stockId,
+                source: 'twse',
+                timestamp: new Date().toISOString()
+            })
         };
 
     } catch (error) {
@@ -129,9 +260,23 @@ async function getStructuredFinancials(stockId, headers) {
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: error.message, stack: error.stack })
+            body: JSON.stringify({ 
+                error: `TWSE結構化數據獲取失敗: ${error.message}`,
+                stockId: stockId,
+                source: 'twse'
+            })
         };
     }
+}
+
+// 帶超時的fetch函數
+function fetchWithTimeout(url, timeout = 10000) {
+    return Promise.race([
+        fetch(url),
+        new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Request timeout for ${url}`)), timeout)
+        )
+    ]);
 }
 
 // === 核心：數據解析函數 ===
@@ -145,7 +290,11 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
             incomeCount: incomeData.length,
             balanceCount: balanceData.length,
             revenueCount: revenueData.length,
-            ratioCount: ratioData.length
+            ratioCount: ratioData.length,
+            parsedEPS: 0,
+            parsedROE: 0,
+            parsedMargin: 0,
+            parsedRevenueGrowth: 0
         }
     };
 
@@ -155,7 +304,7 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
         const quarter = row['季別'];
         const epsRaw = row['基本每股盈餘（元）'];
         
-        if (!epsRaw || epsRaw === '') return;
+        if (!epsRaw || epsRaw === '' || epsRaw === '-') return;
         
         const eps = parseFloat(String(epsRaw).replace(/,/g, ''));
         if (isNaN(eps)) return;
@@ -163,8 +312,10 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
         // 季別 "0" 代表年度，"1"~"4" 代表各季度
         if (quarter && quarter !== '0') {
             result.eps.quarters[`Q${quarter}`] = eps;
+            result._debug.parsedEPS++;
         } else if (quarter === '0') {
             result.eps.year = eps;
+            result._debug.parsedEPS++;
         }
     });
 
@@ -177,21 +328,21 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
         let netIncomeRaw = incomeRow['淨利（淨損）歸屬於母公司業主'] || 
                           incomeRow['本期淨利（淨損）'];
         
-        if (!netIncomeRaw || netIncomeRaw === '') return;
+        if (!netIncomeRaw || netIncomeRaw === '' || netIncomeRaw === '-') return;
         
         const netIncome = parseFloat(String(netIncomeRaw).replace(/,/g, ''));
         if (isNaN(netIncome)) return;
 
         // 找到對應期間的股東權益
         const balanceRow = balanceData.find(b => 
-            b['年度'] === year && b['季別'] === quarter
+            b && b['年度'] === year && b['季別'] === quarter
         );
 
         if (balanceRow) {
             let equityRaw = balanceRow['權益總額'] || 
                            balanceRow['歸屬於母公司業主之權益合計'];
             
-            if (!equityRaw || equityRaw === '') return;
+            if (!equityRaw || equityRaw === '' || equityRaw === '-') return;
             
             const equity = parseFloat(String(equityRaw).replace(/,/g, ''));
 
@@ -200,8 +351,10 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
 
                 if (quarter && quarter !== '0') {
                     result.roe.quarters[`Q${quarter}`] = parseFloat(roe.toFixed(2));
+                    result._debug.parsedROE++;
                 } else if (quarter === '0') {
                     result.roe.year = parseFloat(roe.toFixed(2));
+                    result._debug.parsedROE++;
                 }
             }
         }
@@ -213,15 +366,17 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
         const quarter = row['季別'];
         const marginRaw = row['毛利率(%)(營業毛利)/(營業收入)'];
         
-        if (!marginRaw || marginRaw === '') return;
+        if (!marginRaw || marginRaw === '' || marginRaw === '-') return;
         
         const margin = parseFloat(String(marginRaw).replace(/,/g, ''));
         if (isNaN(margin)) return;
 
         if (quarter && quarter !== '0') {
             result.profitMargin.quarters[`Q${quarter}`] = margin;
+            result._debug.parsedMargin++;
         } else if (quarter === '0') {
             result.profitMargin.year = margin;
+            result._debug.parsedMargin++;
         }
     });
 
@@ -234,7 +389,7 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
             const revenueRaw = row['營業收入'];
             const grossProfitRaw = row['營業毛利（毛損）淨額'] || row['營業毛利（毛損）'];
             
-            if (!revenueRaw || !grossProfitRaw) return;
+            if (!revenueRaw || !grossProfitRaw || revenueRaw === '-' || grossProfitRaw === '-') return;
             
             const revenue = parseFloat(String(revenueRaw).replace(/,/g, ''));
             const grossProfit = parseFloat(String(grossProfitRaw).replace(/,/g, ''));
@@ -245,8 +400,10 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
 
             if (quarter && quarter !== '0') {
                 result.profitMargin.quarters[`Q${quarter}`] = parseFloat(margin.toFixed(2));
+                result._debug.parsedMargin++;
             } else if (quarter === '0') {
                 result.profitMargin.year = parseFloat(margin.toFixed(2));
+                result._debug.parsedMargin++;
             }
         });
     }
@@ -258,11 +415,12 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
             const yearMonth = row['資料年月']; // 格式: "11411" (民國年YYYYMM)
             const monthGrowthRaw = row['營業收入-去年同月增減(%)'];
             
-            if (!yearMonth || !monthGrowthRaw || monthGrowthRaw === '') return;
+            if (!yearMonth || !monthGrowthRaw || monthGrowthRaw === '' || monthGrowthRaw === '-') return;
             
             const monthGrowth = parseFloat(String(monthGrowthRaw).replace(/,/g, ''));
             if (!isNaN(monthGrowth)) {
                 result.revenueGrowth.months[yearMonth] = monthGrowth;
+                result._debug.parsedRevenueGrowth++;
             }
         });
 
@@ -273,16 +431,18 @@ function parseFinancialData(incomeData, balanceData, revenueData, ratioData) {
         
         if (sortedRevenue.length > 0) {
             const latestYearGrowthRaw = sortedRevenue[0]['累計營業收入-前期比較增減(%)'];
-            if (latestYearGrowthRaw && latestYearGrowthRaw !== '') {
+            if (latestYearGrowthRaw && latestYearGrowthRaw !== '' && latestYearGrowthRaw !== '-') {
                 const latestYearGrowth = parseFloat(String(latestYearGrowthRaw).replace(/,/g, ''));
                 if (!isNaN(latestYearGrowth)) {
                     result.revenueGrowth.year = latestYearGrowth;
+                    result._debug.parsedRevenueGrowth++;
                 }
             }
         }
 
         // 計算季營收成長率
-        result.revenueGrowth.quarters = calculateQuarterlyGrowth(revenueData);
+        const quarterlyGrowth = calculateQuarterlyGrowth(revenueData);
+        Object.assign(result.revenueGrowth.quarters, quarterlyGrowth);
     }
 
     return result;
@@ -305,7 +465,7 @@ function calculateQuarterlyGrowth(revenueData) {
         
         const revenueRaw = row['營業收入-當月營收'];
         
-        if (!revenueRaw || revenueRaw === '') return;
+        if (!revenueRaw || revenueRaw === '' || revenueRaw === '-') return;
         
         const revenue = parseFloat(String(revenueRaw).replace(/,/g, ''));
         if (isNaN(revenue)) return;
