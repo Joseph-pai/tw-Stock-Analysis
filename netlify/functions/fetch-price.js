@@ -1,12 +1,5 @@
 const fetch = require('node-fetch');
 
-/**
- * Netlify Function - 三層備援股價獲取系統
- * 1. FinMind (主要)
- * 2. TWSE (備援1) 
- * 3. TPEx 興櫃 (備援2)
- * 4. Yahoo Finance (最後備援)
- */
 exports.handler = async (event, context) => {
     const symbol = event.queryStringParameters.id;
     const headers = {
@@ -22,41 +15,59 @@ exports.handler = async (event, context) => {
         let result;
         let source;
         
-        // 1. 先嘗試 FinMind
+        // 三層備援邏輯（保持不變）
         try {
             result = await fetchFromFinMind(symbol);
             source = 'finmind';
         } catch (error) {
             console.log('FinMind failed, trying TWSE...');
-            
-            // 2. 嘗試 TWSE
             try {
                 result = await fetchFromTWSE(symbol);
                 source = 'twse';
             } catch (error) {
                 console.log('TWSE failed, trying TPEx...');
-                
-                // 3. 嘗試 TPEx (興櫃)
                 try {
                     result = await fetchFromTPEx(symbol);
                     source = 'tpex';
                 } catch (error) {
                     console.log('TPEx failed, trying Yahoo...');
-                    
-                    // 4. 最後嘗試 Yahoo Finance
+                    // 對 Yahoo 需要特殊處理格式
                     result = await fetchFromYahoo(symbol);
                     source = 'yahoo';
                 }
             }
         }
 
+        // 統一返回格式，兼容前端預期
+        const compatibleResult = {
+            // 保持原有 Yahoo 格式的兼容性
+            chart: {
+                result: [{
+                    meta: {
+                        symbol: result.stockId,
+                        regularMarketPrice: result.price,
+                        previousClose: result.price - result.change,
+                        regularMarketVolume: result.volume,
+                        regularMarketTime: new Date(result.date).getTime() / 1000
+                    },
+                    timestamp: [new Date(result.date).getTime() / 1000],
+                    indicators: {
+                        quote: [{
+                            close: [result.price],
+                            volume: [result.volume]
+                        }]
+                    }
+                }]
+            },
+            // 新增的統一格式
+            unified: result,
+            source: source
+        };
+
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify({
-                ...result,
-                source: source
-            })
+            body: JSON.stringify(compatibleResult)
         };
 
     } catch (error) {
@@ -72,9 +83,9 @@ exports.handler = async (event, context) => {
     }
 };
 
-// 1. FinMind 數據源
+// 各數據源函數保持不變
 async function fetchFromFinMind(stockId) {
-    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${stockId}&start_date=${getDate(-30)}`;
+    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${stockId}&start_date=${getDate(-7)}`;
     
     const response = await fetch(url);
     if (!response.ok) throw new Error(`FinMind API失敗: ${response.status}`);
@@ -85,8 +96,8 @@ async function fetchFromFinMind(stockId) {
     const latest = data.data[data.data.length - 1];
     return {
         stockId: stockId,
-        price: latest.close,
-        change: latest.change,
+        price: parseFloat(latest.close),
+        change: parseFloat(latest.change),
         changePercent: ((latest.change / (latest.close - latest.change)) * 100).toFixed(2),
         volume: latest.Trading_volume,
         date: latest.date,
@@ -94,9 +105,8 @@ async function fetchFromFinMind(stockId) {
     };
 }
 
-// 2. TWSE 數據源
 async function fetchFromTWSE(stockId) {
-    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${stockId}.tw`;
+    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${stockId}.tw|otc_${stockId}.tw`;
     
     const response = await fetch(url);
     if (!response.ok) throw new Error(`TWSE API失敗: ${response.status}`);
@@ -105,10 +115,13 @@ async function fetchFromTWSE(stockId) {
     if (!data.msgArray || data.msgArray.length === 0) throw new Error('TWSE無數據');
     
     const stock = data.msgArray[0];
+    const price = parseFloat(stock.z);
+    const previousClose = parseFloat(stock.y);
+    
     return {
         stockId: stockId,
-        price: parseFloat(stock.z),
-        change: parseFloat(stock.z) - parseFloat(stock.y),
+        price: price,
+        change: price - previousClose,
         changePercent: stock.pz,
         volume: parseInt(stock.v),
         date: stock.d,
@@ -116,7 +129,6 @@ async function fetchFromTWSE(stockId) {
     };
 }
 
-// 3. TPEx 興櫃數據源
 async function fetchFromTPEx(stockId) {
     const url = `https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php?l=zh-tw&o=json&stkno=${stockId}`;
     
@@ -127,20 +139,24 @@ async function fetchFromTPEx(stockId) {
     if (!data.aaData || data.aaData.length === 0) throw new Error('TPEx無數據');
     
     const priceData = data.aaData[0];
+    const price = parseFloat(priceData[2]);
+    const change = parseFloat(priceData[3]);
+    
     return {
         stockId: stockId,
-        price: parseFloat(priceData[2]),
-        change: priceData[3],
+        price: price,
+        change: change,
         changePercent: priceData[4],
-        volume: parseInt(priceData[1]),
+        volume: parseInt(priceData[1].replace(/,/g, '')),
         date: priceData[0],
         source: 'tpex'
     };
 }
 
-// 4. Yahoo Finance 數據源 (保持原有邏輯)
 async function fetchFromYahoo(symbol) {
-    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
+    // 確保符號格式正確
+    const formattedSymbol = symbol.includes('.') ? symbol : `${symbol}.TW`;
+    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${formattedSymbol}?interval=1d&range=1d`;
     
     const response = await fetch(yahooUrl);
     if (!response.ok) throw new Error(`Yahoo API失敗: ${response.status}`);
@@ -163,7 +179,6 @@ async function fetchFromYahoo(symbol) {
     };
 }
 
-// 工具函數：取得日期
 function getDate(daysOffset = 0) {
     const date = new Date();
     date.setDate(date.getDate() + daysOffset);
