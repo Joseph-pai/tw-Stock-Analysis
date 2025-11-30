@@ -2,8 +2,6 @@ const fetch = require('node-fetch');
 
 /**
  * 智能財報數據查詢協調器
- * 查詢順序: FinMind → TWSE → Yahoo Finance
- * 興櫃股票: 直接使用興櫃專用查詢
  */
 exports.handler = async (event, context) => {
     const stockId = event.queryStringParameters.id;
@@ -15,7 +13,6 @@ exports.handler = async (event, context) => {
         };
     }
 
-    // CORS 頭部
     const headers = {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
@@ -112,43 +109,21 @@ exports.handler = async (event, context) => {
 // 檢查是否為興櫃股票
 async function checkIfXingGuiStock(stockId) {
     try {
-        // 簡單的興櫃股票判斷邏輯（可根據實際需求調整）
-        // 興櫃股票通常是4位數代碼，且不在上市上櫃名單中
-        const listedStocks = await fetchListedStocks();
-        return !listedStocks.includes(stockId);
+        // 簡單判斷：4位數代碼且嘗試從TPEx獲取數據
+        const tpexUrl = `https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php?l=zh-tw&o=json&stkno=${stockId}`;
+        const response = await fetch(tpexUrl);
+        return response.ok;
     } catch (error) {
         console.error('檢查興櫃股票錯誤:', error);
-        // 如果檢查失敗，默認不是興櫃股票
         return false;
     }
 }
 
-// 獲取上市上櫃股票列表（緩存機制）
-let listedStocksCache = null;
-let cacheTimestamp = null;
-
-async function fetchListedStocks() {
-    // 緩存10分鐘
-    if (listedStocksCache && cacheTimestamp && (Date.now() - cacheTimestamp) < 10 * 60 * 1000) {
-        return listedStocksCache;
-    }
-
-    try {
-        // 這裡可以從 TWSE 或其他來源獲取股票列表
-        // 暫時返回空數組，後續可以完善
-        listedStocksCache = [];
-        cacheTimestamp = Date.now();
-        return listedStocksCache;
-    } catch (error) {
-        console.error('獲取股票列表錯誤:', error);
-        return [];
-    }
-}
-
-// FinMind 財務數據查詢
+// FinMind 財務數據查詢 - 修復：直接呼叫外部API
 async function fetchFinMindFinancials(stockId) {
     try {
-        const finmindUrl = `/.netlify/functions/fetch-finmind?dataset=TaiwanStockFinancialStatements&data_id=${stockId}&token=your_finmind_token`;
+        // 直接呼叫 FinMind API，不使用內部函數
+        const finmindUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockFinancialStatements&data_id=${stockId}`;
         
         const response = await fetch(finmindUrl);
         if (!response.ok) {
@@ -157,9 +132,7 @@ async function fetchFinMindFinancials(stockId) {
 
         const data = await response.json();
         
-        // 檢查 FinMind 是否返回有效數據
         if (data && data.data && data.data.length > 0) {
-            // 解析 FinMind 財務數據
             const parsedData = parseFinMindData(data.data);
             return { success: true, data: parsedData };
         } else {
@@ -172,10 +145,11 @@ async function fetchFinMindFinancials(stockId) {
     }
 }
 
-// TWSE 財務數據查詢
+// TWSE 財務數據查詢 - 修復：直接呼叫外部API
 async function fetchTWSEFinancials(stockId) {
     try {
-        const twseUrl = `/.netlify/functions/fetch-twse?type=financials&stock_id=${stockId}`;
+        // 直接呼叫 TWSE API
+        const twseUrl = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${stockId}.tw|otc_${stockId}.tw`;
         
         const response = await fetch(twseUrl);
         if (!response.ok) {
@@ -184,10 +158,14 @@ async function fetchTWSEFinancials(stockId) {
 
         const data = await response.json();
         
-        // 檢查 TWSE 是否返回有效數據
-        if (data && (data.eps || data.roe || data.revenueGrowth || data.profitMargin)) {
-            // 統一數據格式
-            const unifiedData = unifyFinancialData(data, 'twse');
+        if (data && data.msgArray && data.msgArray.length > 0) {
+            const stockInfo = data.msgArray[0];
+            const unifiedData = {
+                eps: parseFloat(stockInfo.eps) || null,
+                peRatio: parseFloat(stockInfo.pe) || null,
+                price: parseFloat(stockInfo.z) || null,
+                date: stockInfo.d || null
+            };
             return { success: true, data: unifiedData };
         } else {
             return { success: false, error: 'TWSE 無數據' };
@@ -213,9 +191,7 @@ async function fetchYahooFinancials(stockId) {
 
         const data = await response.json();
         
-        // 檢查 Yahoo Finance 是否返回有效數據
         if (data?.quoteSummary?.result?.[0]) {
-            // 解析 Yahoo Finance 數據
             const parsedData = parseYahooData(data.quoteSummary.result[0]);
             return { success: true, data: parsedData };
         } else {
@@ -228,33 +204,31 @@ async function fetchYahooFinancials(stockId) {
     }
 }
 
-// 興櫃財務數據查詢
+// 興櫃財務數據查詢 - 修復：直接呼叫TPEx API
 async function fetchXingGuiFinancials(stockId, headers) {
     try {
-        const xingguiUrl = `/.netlify/functions/fetch-xinggui?stockId=${stockId}&dataType=financials`;
+        // 直接呼叫 TPEx API 獲取興櫃基本資訊
+        const basicUrl = `https://www.tpex.org.tw/web/regular_emerging/raising/raising_result.php?l=zh-tw&o=json&stkno=${stockId}`;
         
-        const response = await fetch(xingguiUrl);
+        const response = await fetch(basicUrl);
         if (!response.ok) {
-            return {
-                statusCode: 500,
-                headers,
-                body: JSON.stringify({ error: `興櫃數據查詢失敗: ${response.status}` })
-            };
+            throw new Error(`興櫃數據查詢失敗: ${response.status}`);
         }
 
         const data = await response.json();
         
-        // 統一數據格式
-        const unifiedData = unifyFinancialData(data, 'xinggui');
+        const unifiedData = {
+            stockId: stockId,
+            name: data.aaData?.[0]?.[1] || '未知',
+            industry: data.aaData?.[0]?.[2] || '未知',
+            listingDate: data.aaData?.[0]?.[3] || '未知',
+            source: 'tpex_xinggui'
+        };
         
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify({
-                ...unifiedData,
-                source: 'xinggui',
-                stockId: stockId
-            })
+            body: JSON.stringify(unifiedData)
         };
 
     } catch (error) {
@@ -269,14 +243,20 @@ async function fetchXingGuiFinancials(stockId, headers) {
 
 // 解析 FinMind 數據
 function parseFinMindData(finmindData) {
-    // 這裡需要根據 FinMind 的實際數據結構進行解析
-    // 暫時返回基本結構，後續完善
+    if (!finmindData || finmindData.length === 0) return {};
+    
+    // 按日期排序，獲取最新數據
+    const sortedData = [...finmindData].sort((a, b) => 
+        new Date(b.date) - new Date(a.date)
+    );
+    
+    const latest = sortedData[0];
     return {
-        eps: getLatestEPS(finmindData),
-        revenue: getLatestRevenue(finmindData),
-        profit: getLatestProfit(finmindData),
-        roe: getLatestROE(finmindData),
-        // 其他財務指標...
+        eps: latest.eps || null,
+        revenue: latest.revenue || null,
+        profit: latest.profit || null,
+        roe: latest.roe || null,
+        date: latest.date || null
     };
 }
 
@@ -292,66 +272,6 @@ function parseYahooData(yahooData) {
         roe: financialData.returnOnEquity,
         currentPrice: financialData.currentPrice,
         targetMeanPrice: financialData.targetMeanPrice,
-        recommendation: financialData.recommendationKey,
-        // 其他指標...
+        recommendation: financialData.recommendationKey
     };
-}
-
-// 統一財務數據格式
-function unifyFinancialData(rawData, source) {
-    // 根據數據源統一數據格式
-    switch (source) {
-        case 'twse':
-            return {
-                eps: rawData.eps?.year || rawData.eps?.quarters?.Q4 || null,
-                revenue: null, // TWSE 需要從其他字段獲取
-                profit: null,  // TWSE 需要從其他字段獲取
-                roe: rawData.roe?.year || rawData.roe?.quarters?.Q4 || null,
-                profitMargin: rawData.profitMargin?.year || rawData.profitMargin?.quarters?.Q4 || null,
-                revenueGrowth: rawData.revenueGrowth?.year || null,
-                rawData: rawData // 保留原始數據供後續處理
-            };
-            
-        case 'xinggui':
-            return {
-                eps: rawData.eps,
-                revenue: rawData.revenue,
-                profit: rawData.profit,
-                roe: rawData.roe,
-                rawData: rawData
-            };
-            
-        case 'finmind':
-        case 'yahoo':
-        default:
-            return rawData;
-    }
-}
-
-// 輔助函數 - 從 FinMind 數據中提取最新 EPS
-function getLatestEPS(finmindData) {
-    if (!finmindData || finmindData.length === 0) return null;
-    
-    // 按日期排序，獲取最新數據
-    const sortedData = [...finmindData].sort((a, b) => 
-        new Date(b.date) - new Date(a.date)
-    );
-    
-    return sortedData[0]?.eps || null;
-}
-
-// 其他輔助函數...
-function getLatestRevenue(finmindData) {
-    // 實現邏輯...
-    return null;
-}
-
-function getLatestProfit(finmindData) {
-    // 實現邏輯...
-    return null;
-}
-
-function getLatestROE(finmindData) {
-    // 實現邏輯...
-    return null;
 }
