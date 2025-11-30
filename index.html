@@ -335,7 +335,8 @@ document.addEventListener('DOMContentLoaded', () => {
         eps: { quarters: {}, year: null },
         roe: { quarters: {}, year: null },
         revenueGrowth: { months: {}, quarters: {}, year: null },
-        profitMargin: { quarters: {}, year: null }
+        profitMargin: { quarters: {}, year: null },
+        source: 'unknown' // 新增：記錄數據來源
     };
 
     const twseIndustryMap = {
@@ -1129,7 +1130,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { return null; }
     }
 
-    // ================= 財務數據獲取 - 優先 FinMind =================
+    // ================= 財務數據獲取 - 使用新的智能查詢機制 =================
     
     async function fetchFinancialData(stockId) {
         log(`開始獲取財務數據: ${stockId}`);
@@ -1139,369 +1140,49 @@ document.addEventListener('DOMContentLoaded', () => {
             eps: { quarters: {}, year: null },
             roe: { quarters: {}, year: null },
             revenueGrowth: { months: {}, quarters: {}, year: null },
-            profitMargin: { quarters: {}, year: null }
+            profitMargin: { quarters: {}, year: null },
+            source: 'unknown'
         };
         
         let source = 'Unknown';
         
-        // 1. 優先從 FinMind 獲取數據
-        if (TOKEN) {
-            log('嘗試從 FinMind 獲取財務數據...');
-            const finmindData = await fetchFinmindFinancials(stockId);
-            if (finmindData) {
-                source = 'FinMind';
-                log('✅ FinMind 財務數據載入成功');
-                return { source, data: finmindData };
-            }
-        }
-        
-        // 2. 備援：證交所財報
-        log('FinMind 失敗，嘗試證交所財報...');
-        const twseData = await fetchTWSEFinancials(stockId);
-        if (twseData) {
-            source = 'TWSE';
-            log('✅ 證交所財務數據載入成功');
-            return { source, data: twseData };
-        }
-        
-        // 3. 最終備援：Yahoo Finance
-        log('證交所失敗，嘗試 Yahoo Finance...');
-        const yahooData = await fetchYahooFinanceFinancials(stockId);
-        if (yahooData) {
-            source = 'Yahoo Finance';
-            log('✅ Yahoo Finance 財務數據載入成功');
-            return { source, data: yahooData };
-        }
-        
-        log('❌ 所有財務數據來源都失敗');
-        return null;
-    }
-
-    async function fetchFinmindFinancials(stockId) {
         try {
-            log(`🔍 FinMind 數據獲取開始: ${stockId}`);
-            
-            // 使用正確的數據集 - 財務報表包含 EPS 和毛利率數據
-            const [financialStatement, balanceSheet, revenueData] = await Promise.all([
-                fetchFinmind('TaiwanStockFinancialStatements', stockId, '2020-01-01'),
-                fetchFinmind('TaiwanStockBalanceSheet', stockId, '2020-01-01'),
-                fetchFinmind('TaiwanStockMonthRevenue', stockId, '2020-01-01')
-            ]);
-
-            // 詳細的數據檢查日誌
-            log(`📊 FinMind 數據檢查:`);
-            log(`- 財務報表筆數: ${financialStatement?.data?.length || 0}`);
-            log(`- 資產負債表筆數: ${balanceSheet?.data?.length || 0}`);
-            log(`- 月營收筆數: ${revenueData?.data?.length || 0}`);
-
-            if (!financialStatement && !balanceSheet && !revenueData) {
-                log('❌ FinMind 所有數據集都為空');
-                return null;
-            }
-
-            // 處理財務報表數據 - 按日期和類型重組
-            if (financialStatement?.data) {
-                log(`🔄 重組財務報表數據...`);
-                
-                // 按日期分組數據
-                const byDate = {};
-                financialStatement.data.forEach(item => {
-                    if (!byDate[item.date]) byDate[item.date] = {};
-                    byDate[item.date][item.type] = item.value;
-                    byDate[item.date]['_origin'] = byDate[item.date]['_origin'] || {};
-                    byDate[item.date]['_origin'][item.type] = item.origin_name;
-                });
-
-                // 按季度分組數據（確保 Q1-Q4 順序）
-                const byQuarter = {};
-                let latestYearEPS = 0;
-                let latestYearDate = '';
-                
-                // 處理每個日期的數據
-                const dates = Object.keys(byDate).sort().reverse(); // 從最新到最舊
-                
-                dates.forEach(date => {
-                    const data = byDate[date];
-                    const dateObj = new Date(date);
-                    const year = dateObj.getFullYear();
-                    const month = dateObj.getMonth() + 1;
-                    const quarter = Math.floor((month + 2) / 3);
-                    const quarterKey = `${year}Q${quarter}`;
-                    
-                    log(`📅 處理 ${date} (${year}Q${quarter}) 數據:`);
-
-                    // 1. 處理 EPS 數據
-                    if (data.EPS !== undefined) {
-                        const eps = parseFloat(data.EPS);
-                        if (!isNaN(eps)) {
-                            if (!byQuarter[quarterKey]) byQuarter[quarterKey] = {};
-                            byQuarter[quarterKey].eps = eps;
-                            byQuarter[quarterKey].date = date;
-                            byQuarter[quarterKey].year = year;
-                            byQuarter[quarterKey].quarter = quarter;
-                            
-                            log(`  ✅ EPS ${year}Q${quarter}: ${eps}`);
-                            
-                            // 計算年度 EPS (累計最近4個季度)
-                            if (year === 2025) { // 只計算2025年度的EPS
-                                latestYearEPS += eps;
-                                latestYearDate = date;
-                            }
-                        }
-                    }
-
-                    // 2. 計算毛利率
-                    if (data.Revenue !== undefined && data.CostOfGoodsSold !== undefined) {
-                        const revenue = parseFloat(data.Revenue);
-                        const cost = parseFloat(data.CostOfGoodsSold);
-                        
-                        if (!isNaN(revenue) && !isNaN(cost) && revenue > 0) {
-                            const grossProfit = revenue - cost;
-                            const margin = (grossProfit / revenue) * 100;
-                            
-                            if (!byQuarter[quarterKey]) byQuarter[quarterKey] = {};
-                            byQuarter[quarterKey].profitMargin = parseFloat(margin.toFixed(2));
-                            log(`  ✅ 毛利率 ${year}Q${quarter}: ${margin.toFixed(2)}%`);
-                        }
-                    }
-
-                    // 3. 計算 ROE - 使用正確的淨利和股東權益
-                    if (data.IncomeAfterTaxes !== undefined || data.TotalConsolidatedProfitForThePeriod !== undefined) {
-                        const netIncome = parseFloat(data.IncomeAfterTaxes || data.TotalConsolidatedProfitForThePeriod);
-                        
-                        if (balanceSheet?.data && !isNaN(netIncome)) {
-                            const balanceItem = balanceSheet.data.find(b => b.date === date);
-                            if (balanceItem) {
-                                // 嘗試不同的股東權益字段名稱
-                                const equity = parseFloat(balanceItem.equity || balanceItem.total_equity || 
-                                                       balanceItem['權益總計'] || balanceItem['權益總額'] ||
-                                                       balanceItem['歸屬於母公司業主之權益合計']);
-                                
-                                if (!isNaN(equity) && equity > 0) {
-                                    const roe = (netIncome / equity) * 100;
-                                    
-                                    if (!byQuarter[quarterKey]) byQuarter[quarterKey] = {};
-                                    byQuarter[quarterKey].roe = parseFloat(roe.toFixed(2));
-                                    log(`  ✅ ROE ${year}Q${quarter}: ${roe.toFixed(2)}% (淨利: ${netIncome}, 權益: ${equity})`);
-                                    
-                                    // 設置年度 ROE (使用最新季度的)
-                                    if (year === 2025 && (!financialCache.roe.year || dateObj > new Date(financialCache.roe._latestDate || 0))) {
-                                        financialCache.roe.year = parseFloat(roe.toFixed(2));
-                                        financialCache.roe._latestDate = date;
-                                    }
-                                } else {
-                                    log(`  ⚠️ 股東權益為零或無效: ${equity}`);
-                                }
-                            } else {
-                                log(`  ⚠️ 找不到對應日期的資產負債表數據: ${date}`);
-                            }
-                        } else {
-                            log(`  ⚠️ 淨利數據無效: ${netIncome}`);
-                        }
-                    } else {
-                        log(`  ⚠️ 缺少淨利數據`);
-                    }
-                });
-
-                // 設置年度 EPS
-                if (latestYearEPS > 0) {
-                    financialCache.eps.year = parseFloat(latestYearEPS.toFixed(2));
-                    log(`💰 2025年度 EPS: ${financialCache.eps.year} (累計: ${latestYearEPS})`);
-                }
-
-                // 刪除毛利率年度數據
-                financialCache.profitMargin.year = null;
-
-                // 按正確的季度順序 (Q1, Q2, Q3, Q4) 組織數據
-                const quarterKeys = Object.keys(byQuarter).sort().reverse(); // 從最新到最舊
-                
-                // 只取最近4個季度
-                const recentQuarters = quarterKeys.slice(0, 4);
-                
-                // 按 Q1, Q2, Q3, Q4 順序重新排列
-                const sortedQuarters = recentQuarters.sort((a, b) => {
-                    const [yearA, quarterA] = a.split('Q');
-                    const [yearB, quarterB] = b.split('Q');
-                    
-                    if (yearA !== yearB) return yearB - yearA; // 年份新的在前
-                    return quarterA - quarterB; // 季度小的在前 (Q1, Q2, Q3, Q4)
-                });
-                
-                log(`🔄 按季度順序組織數據: ${sortedQuarters.join(', ')}`);
-                
-                // 將數據填入 financialCache
-                sortedQuarters.forEach(quarterKey => {
-                    const data = byQuarter[quarterKey];
-                    const quarterNum = quarterKey.split('Q')[1];
-                    
-                    if (data.eps !== undefined) {
-                        financialCache.eps.quarters[`Q${quarterNum}`] = data.eps;
-                    }
-                    
-                    if (data.profitMargin !== undefined) {
-                        financialCache.profitMargin.quarters[`Q${quarterNum}`] = data.profitMargin;
-                    }
-                    
-                    if (data.roe !== undefined) {
-                        financialCache.roe.quarters[`Q${quarterNum}`] = data.roe;
-                    }
-                });
-
-                // 如果沒有 ROE 數據，設置預設值
-                if (Object.keys(financialCache.roe.quarters).length === 0) {
-                    log(`⚠️ 沒有 ROE 數據，設置預設值`);
-                    financialCache.roe.quarters = {
-                        'Q1': 9.36,
-                        'Q2': 9.36, 
-                        'Q3': 9.36,
-                        'Q4': 9.36
-                    };
-                    financialCache.roe.year = 26.07;
-                }
-            }
-
-            // 處理營收成長率
-            if (revenueData?.data) {
-                log(`🔄 處理營收成長率數據...`);
-                const sortedRevenue = revenueData.data.sort((a, b) => new Date(b.date) - new Date(a.date));
-                
-                // 月度營收成長率 - 計算月增率 (本月 vs 上月)
-                if (sortedRevenue.length >= 2) {
-                    log(`📈 計算月度營收成長率...`);
-                    
-                    for (let i = 0; i < sortedRevenue.length - 1; i++) {
-                        const currentMonth = sortedRevenue[i];
-                        const previousMonth = sortedRevenue[i + 1];
-                        
-                        const currentRevenue = parseFloat(currentMonth.revenue);
-                        const previousRevenue = parseFloat(previousMonth.revenue);
-                        
-                        if (!isNaN(currentRevenue) && !isNaN(previousRevenue) && previousRevenue > 0) {
-                            const date = new Date(currentMonth.date);
-                            const year = date.getFullYear();
-                            const month = date.getMonth() + 1;
-                            
-                            // 民國年轉換：西元年轉民國年
-                            const rocYear = (year - 1911).toString();
-                            const monthKey = `${rocYear}${month.toString().padStart(2, '0')}`;
-                            
-                            // 計算月增率: (本月營收 - 上月營收) / 上月營收 * 100
-                            const monthGrowth = ((currentRevenue - previousRevenue) / previousRevenue) * 100;
-                            
-                            financialCache.revenueGrowth.months[monthKey] = parseFloat(monthGrowth.toFixed(2));
-                            log(`  ✅ 月營收成長 ${monthKey}: ${monthGrowth.toFixed(2)}%`);
-                            
-                            // 只保留最近12個月
-                            if (Object.keys(financialCache.revenueGrowth.months).length >= 12) break;
-                        }
-                    }
-                }
-
-                // 計算季度營收成長率
-                const quarters = {};
-                sortedRevenue.forEach(item => {
-                    const date = new Date(item.date);
-                    const year = date.getFullYear();
-                    const quarter = Math.floor((date.getMonth() + 2) / 3);
-                    const key = `${year}Q${quarter}`;
-                    
-                    if (!quarters[key]) quarters[key] = 0;
-                    quarters[key] += parseFloat(item.revenue) || 0;
-                });
-
-                // 計算季度成長率 (與去年同期比較)
-                const quarterKeys = Object.keys(quarters).sort().slice(-8);
-                for (let i = 4; i < quarterKeys.length; i++) {
-                    const current = quarters[quarterKeys[i]];
-                    const previous = quarters[quarterKeys[i - 4]];
-                    
-                    if (previous > 0) {
-                        const growth = ((current - previous) / previous) * 100;
-                        const quarterLabel = quarterKeys[i].slice(-2);
-                        financialCache.revenueGrowth.quarters[quarterLabel] = parseFloat(growth.toFixed(2));
-                        log(`  ✅ 季營收成長 ${quarterLabel}: ${growth.toFixed(2)}%`);
-                    }
-                }
-
-                // 年度營收成長率
-                if (sortedRevenue.length >= 24) {
-                    const currentYearTotal = sortedRevenue.slice(0, 12).reduce((sum, item) => sum + (parseFloat(item.revenue) || 0), 0);
-                    const lastYearTotal = sortedRevenue.slice(12, 24).reduce((sum, item) => sum + (parseFloat(item.revenue) || 0), 0);
-                    
-                    if (lastYearTotal > 0) {
-                        const growth = ((currentYearTotal - lastYearTotal) / lastYearTotal) * 100;
-                        financialCache.revenueGrowth.year = parseFloat(growth.toFixed(2));
-                        log(`  ✅ 年營收成長: ${growth.toFixed(2)}%`);
-                    }
-                }
-            }
-
-            // 最終數據統計
-            log(`📊 FinMind 數據解析完成:`);
-            log(`- EPS 季度: ${Object.keys(financialCache.eps.quarters).join(', ')}`);
-            log(`- EPS 年度: ${financialCache.eps.year}`);
-            log(`- ROE 季度: ${Object.keys(financialCache.roe.quarters).join(', ')}`);
-            log(`- ROE 年度: ${financialCache.roe.year}`);
-            log(`- 營收成長月度: ${Object.keys(financialCache.revenueGrowth.months).length} 筆`);
-            log(`- 營收成長季度: ${Object.keys(financialCache.revenueGrowth.quarters).join(', ')}`);
-            log(`- 營收成長年度: ${financialCache.revenueGrowth.year}`);
-            log(`- 毛利率季度: ${Object.keys(financialCache.profitMargin.quarters).join(', ')}`);
-            log(`- 毛利率年度: ${financialCache.profitMargin.year}`);
-
-            return financialCache;
-
-        } catch (err) {
-            log(`❌ FinMind 財務數據獲取失敗: ${err.message}`);
-            console.error(err);
-            return null;
-        }
-    }
-
-    async function fetchTWSEFinancials(stockId) {
-        log(`證交所財報 請求中... (${stockId})`);
-        
-        try {
-            const response = await fetch(`/.netlify/functions/fetch-twse?type=financials&stock_id=${stockId}`);
+            // 使用新的智能財務數據查詢函數
+            log('使用智能財務數據查詢...');
+            const response = await fetch(`/.netlify/functions/fetch-financials?id=${stockId}`);
             
             if (!response.ok) {
-                log(`證交所代理請求失敗: ${response.status}`);
+                log(`財務數據查詢失敗: ${response.status}`);
                 return null;
             }
             
-            const structuredData = await response.json();
+            const result = await response.json();
             
-            if (structuredData.error) {
-                log(`證交所數據錯誤: ${structuredData.error}`);
+            if (result.error) {
+                log(`財務數據錯誤: ${result.error}`);
                 return null;
             }
             
-            financialCache = structuredData;
+            // 更新財務快取
+            financialCache = {
+                eps: result.eps || { quarters: {}, year: null },
+                roe: result.roe || { quarters: {}, year: null },
+                revenueGrowth: result.revenueGrowth || { months: {}, quarters: {}, year: null },
+                profitMargin: result.profitMargin || { quarters: {}, year: null },
+                source: result.source || 'unknown'
+            };
             
-            log(`✅ TWSE 結構化數據載入成功`);
-            return financialCache;
+            source = result.source || 'unknown';
             
-        } catch (err) {
-            log(`證交所數據處理失敗: ${err.message}`);
+            log(`✅ 財務數據載入成功，來源: ${source}`);
+            log(`📊 數據統計: EPS年度=${financialCache.eps.year}, ROE年度=${financialCache.roe.year}, 營收成長=${financialCache.revenueGrowth.year}, 毛利率=${financialCache.profitMargin.year}`);
+            
+            return { source, data: financialCache };
+            
+        } catch (error) {
+            log(`❌ 財務數據獲取失敗: ${error.message}`);
             return null;
         }
-    }
-
-    async function fetchYahooFinanceFinancials(stockId) {
-        try {
-            const response = await fetch(`/.netlify/functions/fetch-financials?id=${stockId}`);
-            if (!response.ok) return null;
-            const result = await response.json(); 
-            if (result && !result.error) {
-                financialCache.eps.year = result.defaultKeyStatistics?.trailingEps?.raw || 'N/A';
-                financialCache.roe.year = result.financialData?.returnOnEquity?.raw ? result.financialData.returnOnEquity.raw * 100 : 'N/A';
-                if (financialCache.revenueGrowth.year === 'N/A') {
-                    financialCache.revenueGrowth.year = result.financialData?.revenueGrowth?.raw ? (result.financialData.revenueGrowth.raw * 100).toFixed(2) : 'N/A';
-                }
-                financialCache.profitMargin.quarters['Q1'] = result.financialData?.grossMargins?.raw ? result.financialData.grossMargins.raw * 100 : 'N/A';
-                return financialCache;
-            }
-            return null;
-        } catch (err) { return null; }
     }
 
     // ================= 資料載入邏輯 =================
@@ -2113,7 +1794,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div id="finalScore"><h1 class="score-big">--</h1></div>
                     <p class="lead">整體市場趨勢評分 <span id="weightHint" style="color:yellow"></span></p>
                     <p class="fs-5">現價 ${price} ｜ 期間漲跌 ${risePercent}%</p>
-                    <p class="data-source">資料來源: FinMind TWSE台灣證卷交易所</p>
+                    <p class="data-source">資料來源: ${finSource} + TWSE台灣證卷交易所</p>
                 </div>
 
                 <div class="row g-4">
