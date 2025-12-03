@@ -147,12 +147,12 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超時
 
   try {
-    // 修正: 將 API Key 放入 X-goog-api-key Header
+    // 將 API Key 放入 X-goog-api-key Header
     const response = await fetch(`${API_ENDPOINT}${MODEL}:generateContent`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-goog-api-key': apiKey // 修正: 使用 X-goog-api-key Header 傳遞 Key
+        'X-goog-api-key': apiKey // 使用 X-goog-api-key Header 傳遞 Key
       },
       body: JSON.stringify({
         contents: [{
@@ -196,7 +196,7 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
       const errorData = await response.json();
       console.error('Gemini API錯誤詳情:', errorData);
       
-      // 修正: 如果 Pro 模型失敗，嘗試降級到 Flash 模型
+      // 如果 Pro 模型失敗，嘗試降級到 Flash 模型
       if (response.status === 404 || response.status === 400) {
         console.log(`${MODEL} 模型錯誤，嘗試降級到 Flash 模型...`);
         return await analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType);
@@ -208,11 +208,26 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
     const data = await response.json();
     console.log('Gemini API響應數據結構:', Object.keys(data));
     
-    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
-      console.error('Gemini API返回數據格式錯誤:', data);
-      throw new Error('Gemini API返回數據格式錯誤：缺少必要字段');
+    // *** 修正: 增強的錯誤處理邏輯 ***
+    if (!data.candidates || data.candidates.length === 0) {
+      let errorMessage = 'Gemini API返回數據格式錯誤：缺少候選回覆 (candidates)。';
+      
+      if (data.promptFeedback && data.promptFeedback.blockReason) {
+        errorMessage = `Gemini API回覆被阻擋。原因: ${data.promptFeedback.blockReason}。請檢查您的提示內容是否被視為不安全內容(例如金融建議)。`;
+      } else if (data.error && data.error.message) {
+         errorMessage = `Gemini API錯誤：${data.error.message}`;
+      }
+      
+      console.error('Gemini API返回數據結構錯誤:', data);
+      throw new Error(errorMessage);
     }
     
+    if (!data.candidates[0].content || !data.candidates[0].content.parts) {
+      console.error('Gemini API返回數據格式錯誤:', data);
+      throw new Error('Gemini API返回數據格式錯誤：候選回覆結構不完整。');
+    }
+    // *** 修正結束 ***
+
     const content = data.candidates[0].content.parts[0].text;
     console.log('Gemini回應內容長度:', content.length);
     console.log('Gemini回應內容:', content.substring(0, 500));
@@ -241,12 +256,12 @@ async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) 
   const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
-    // 修正: 將 API Key 放入 X-goog-api-key Header
+    // 將 API Key 放入 X-goog-api-key Header
     const response = await fetch(`${API_ENDPOINT}${MODEL}:generateContent`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-goog-api-key': apiKey // 修正: 使用 X-goog-api-key Header 傳遞 Key
+        'X-goog-api-key': apiKey // 使用 X-goog-api-key Header 傳遞 Key
       },
       body: JSON.stringify({
         contents: [{
@@ -293,9 +308,25 @@ async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) 
 
     const data = await response.json();
     
-    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
-      throw new Error('Gemini Flash API返回數據格式錯誤');
+    // *** 修正: 增強的錯誤處理邏輯 ***
+    if (!data.candidates || data.candidates.length === 0) {
+      let errorMessage = 'Gemini Flash API返回數據格式錯誤：缺少候選回覆 (candidates)。';
+      
+      if (data.promptFeedback && data.promptFeedback.blockReason) {
+        errorMessage = `Gemini Flash API回覆被阻擋。原因: ${data.promptFeedback.blockReason}。請檢查您的提示內容是否被視為不安全內容(例如金融建議)。`;
+      } else if (data.error && data.error.message) {
+         errorMessage = `Gemini Flash API錯誤：${data.error.message}`;
+      }
+      
+      console.error('Gemini API返回數據結構錯誤:', data);
+      throw new Error(errorMessage);
     }
+    
+    if (!data.candidates[0].content || !data.candidates[0].content.parts) {
+      console.error('Gemini API返回數據格式錯誤:', data);
+      throw new Error('Gemini API返回數據格式錯誤：候選回覆結構不完整。');
+    }
+    // *** 修正結束 ***
     
     const content = data.candidates[0].content.parts[0].text;
     console.log('Gemini Flash回應內容:', content.substring(0, 500));
