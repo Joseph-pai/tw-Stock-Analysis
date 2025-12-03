@@ -31,6 +31,41 @@
         .basis-box { background: rgba(0,0,0,0.3); border-left: 4px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 4px; }
         td, th { vertical-align: middle; }
         .stock-search { max-width: 300px; }
+        /* 新增：解決左右太靠邊緣的問題 */
+.container {
+    max-width: 1350px;
+    padding-left: 30px !important;  /* 添加左邊距 */
+    padding-right: 30px !important; /* 添加右邊距 */
+}
+
+/* 針對卡片內容添加內邊距 */
+.card {
+    background: rgba(255,255,255,0.12);
+    backdrop-filter: blur(12px);
+    border: none;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    margin-left: 10px !important;    /* 添加左邊距 */
+    margin-right: 10px !important;   /* 添加右邊距 */
+}
+
+/* 針對表格添加內邊距 */
+.table-responsive {
+    padding-left: 15px;
+    padding-right: 15px;
+}
+
+/* 針對 AI 分析結果區域添加內邊距 */
+#aiAnalysisResult .row .col-md-6 {
+    padding-left: 15px;
+    padding-right: 15px;
+}
+
+/* 確保圖表不會貼邊 */
+canvas {
+    margin: 0 auto;
+    display: block;
+    max-width: 95%;  /* 限制最大寬度 */
+}
     </style>
 </head>
 <body>
