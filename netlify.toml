@@ -11,8 +11,8 @@
 # 函數預設設定子表格 (此為設定所有 Functions 的執行逾時時間)
 [functions."*"]
   # 函數的執行時間限制 (單位為秒)。
-  # 設定為 20 秒，確保抓取外部 API 數據有足夠時間。
-  timeout = 20
+  # 設定為 30 秒，確保 AI 分析有足夠時間
+  timeout = 30
   
 # 設定 /api/* 請求代理到我們的 Functions 裡
 [[redirects]]
@@ -20,3 +20,33 @@
   to = "/.netlify/functions/:splat"
   status = 200
   force = true
+
+# 錯誤頁面配置
+[[redirects]]
+  from = "/*"
+  status = 404
+  to = "/404.html"
+
+# 安全標頭設置
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# 壓縮設定
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# API 路由的特殊處理
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    Cache-Control = "no-cache, no-store, must-revalidate"
