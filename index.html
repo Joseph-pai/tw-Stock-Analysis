@@ -58,7 +58,7 @@
         <div class="col-md-8">
             <div class="row g-2 mb-3">
                 <div class="col-md-4">
-                    <label class="form-label text-white-50">手動輸入股票代碼</label>
+                    <label class="form-label text-white-50">手動輸入股票代碼或名稱</label>
                     <div class="input-group stock-search">
                         <input type="text" id="manualStockCode" class="form-control" placeholder="例如: 2330">
                         <button class="btn btn-info text-white fw-bold" id="searchStock">搜尋</button>
@@ -1590,7 +1590,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('searchStock').onclick = async () => {
         const manualCode = document.getElementById('manualStockCode').value.trim();
         if (!manualCode) {
-            alert('請輸入股票代碼');
+            alert('請輸入股票代碼或名稱');
             return;
         }
 
