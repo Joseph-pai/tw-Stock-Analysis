@@ -255,26 +255,76 @@ async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
   return parsedResult;
 }
 
-// 創建結構化提示詞（簡化版本）
+// 創建結構化提示詞
 function createStructuredPrompt(stockId, stockName, analysisType) {
   const currentDate = new Date().toLocaleDateString('zh-TW');
   
   if (analysisType === 'news') {
-    return `請分析${stockId} ${stockName}的市場消息面，重點整理總結，給出-10～+10的評分。
+    return `作為專業股票分析師，請分析台灣股票 ${stockId} ${stockName} 在 ${currentDate} 的最新市場消息面。
 
-請提供：
-1. 正面因素與分析
-2. 負面因素與分析  
-3. 綜合評分與理由
-4. 投資建議`;
+請嚴格按照以下格式提供分析：
+
+【正面因素】
+1. [具體利多因素1 - 請提供實際數據或事件，包含影響程度]
+2. [具體利多因素2 - 請提供實際數據或事件，包含影響程度] 
+3. [具體利多因素3 - 請提供實際數據或事件，包含影響程度]
+
+【負面因素】
+1. [具體利空因素1 - 請提供風險分析和影響程度]
+2. [具體利空因素2 - 請提供風險分析和影響程度]
+3. [具體利空因素3 - 請提供風險分析和影響程度]
+
+【評分項目詳情】
+請為以下項目分配具體分數（每個項目-2到+4分）：
+• 營收成長性：[分數]分 - [理由]
+• 盈利能力：[分數]分 - [理由]
+• 市場地位：[分數]分 - [理由]  
+• 行業前景：[分數]分 - [理由]
+• 新聞影響：[分數]分 - [理由]
+• 技術面：[分數]分 - [理由]
+
+【總分計算】
+請詳細說明每個項目的分數計算過程和總分
+
+【最終評分】[必須是-10到+10的整數]
+
+【投資建議】[50字內的具體建議]
+
+請基於最新市場資訊提供真實、客觀的分析。`;
   } else {
-    return `請分析${stockId} ${stockName}的風險面，重點整理總結，給出-10～+10的評分。
+    return `作為專業風險分析師，請分析台灣股票 ${stockId} ${stockName} 在 ${currentDate} 的風險面因素。
 
-請提供：
-1. 主要風險因素
-2. 風險緩衝因素
-3. 綜合評分與理由
-4. 風險管理建議`;
+請嚴格按照以下格式提供分析：
+
+【高風險因素】
+1. [具體高風險1 - 請說明風險程度和影響，包含具體數據]
+2. [具體高風險2 - 請說明風險程度和影響，包含具體數據]
+
+【中風險因素】  
+1. [具體中風險1 - 請說明潛在影響和監控要點]
+2. [具體中風險2 - 請說明潛在影響和監控要點]
+
+【風險緩衝因素】
+1. [公司優勢1 - 如何抵禦風險，包含具體數據]
+2. [公司優勢2 - 如何抵禦風險，包含具體數據]
+
+【評分項目詳情】
+請為以下項目分配具體分數（負分表示風險，正分表示抵抗力）：
+• 財務風險：[分數]分 - [理由]
+• 市場風險：[分數]分 - [理由]
+• 營運風險：[分數]分 - [理由]
+• 行業風險：[分數]分 - [理由]
+• 管理風險：[分數]分 - [理由]
+• 風險緩衝：[分數]分 - [理由]
+
+【總分計算】
+請詳細說明每個項目的分數計算過程和總分
+
+【最終評分】[必須是-10到+10的整數]
+
+【風險建議】[50字內的具體建議]
+
+請提供基於實際情況的客觀風險評估。`;
   }
 }
 
@@ -290,164 +340,88 @@ function parseStructuredResponse(content, analysisType, stockName) {
     let summary = '';
     let recommendation = '';
 
-    // 嘗試從內容中提取評分
-    const scorePatterns = [
-      /評分[：:]\s*([+-]?\d+)/i,
-      /([+-]?\d+)\s*分/i,
-      /評分[為是]\s*([+-]?\d+)/i,
-      /最終評分[：:]\s*([+-]?\d+)/i
-    ];
-    
-    for (const pattern of scorePatterns) {
-      const match = content.match(pattern);
-      if (match) {
-        score = parseInt(match[1]);
-        if (score > 10) score = 10;
-        if (score < -10) score = -10;
-        console.log('找到評分:', score);
-        break;
-      }
+    // 提取最終評分
+    const finalScoreMatch = content.match(/【最終評分】\s*[\[\]（）()]*\s*([+-]?\d+)/);
+    if (finalScoreMatch) {
+      score = parseInt(finalScoreMatch[1]);
+      console.log('找到最終評分:', score);
     }
 
     // 提取正面因素
-    const positiveKeywords = ['正面', '利多', '優勢', '機會', '成長', '有利', '積極'];
-    const negativeKeywords = ['負面', '利空', '風險', '挑戰', '問題', '不利', '消極'];
-    
-    if (analysisType === 'news') {
-      // 消息面分析
-      const lines = content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-      
-      let inPositiveSection = false;
-      let inNegativeSection = false;
-      
-      for (const line of lines) {
-        const lowerLine = line.toLowerCase();
-        
-        // 檢測部分開始
-        if (positiveKeywords.some(keyword => lowerLine.includes(keyword))) {
-          inPositiveSection = true;
-          inNegativeSection = false;
-          continue;
-        }
-        
-        if (negativeKeywords.some(keyword => lowerLine.includes(keyword))) {
-          inPositiveSection = false;
-          inNegativeSection = true;
-          continue;
-        }
-        
-        // 收集因素
-        if (inPositiveSection && (line.match(/^\d+\./) || line.match(/^[•\-]/) || line.match(/^[✓✔]/))) {
-          const factor = line.replace(/^\d+\.\s*|[•\-]\s*|[✓✔]\s*/g, '').trim();
-          if (factor.length > 0 && positives.length < 5) {
-            positives.push(factor);
-          }
-        }
-        
-        if (inNegativeSection && (line.match(/^\d+\./) || line.match(/^[•\-]/) || line.match(/^[⚠️❗❌]/))) {
-          const factor = line.replace(/^\d+\.\s*|[•\-]\s*|[⚠️❗❌]\s*/g, '').trim();
-          if (factor.length > 0 && negatives.length < 5) {
-            negatives.push(factor);
-          }
-        }
+    const positivesMatch = content.match(/【正面因素】([\s\S]*?)【負面因素】/);
+    if (positivesMatch) {
+      const positivesText = positivesMatch[1];
+      positives = extractNumberedItems(positivesText);
+      console.log('提取正面因素:', positives.length);
+    }
+
+    // 提取負面因素
+    const negativesMatch = content.match(/【負面因素】([\s\S]*?)【評分項目詳情】/);
+    if (negativesMatch) {
+      const negativesText = negativesMatch[1];
+      negatives = extractNumberedItems(negativesText);
+      console.log('提取負面因素:', negatives.length);
+    }
+
+    // 提取風險因素（風險面分析）
+    if (analysisType === 'risk') {
+      const risksMatch = content.match(/【高風險因素】([\s\S]*?)【中風險因素】/);
+      if (risksMatch) {
+        const risksText = risksMatch[1];
+        positives = extractNumberedItems(risksText);
+        console.log('提取風險因素:', positives.length);
       }
-    } else {
-      // 風險面分析
-      const riskKeywords = ['風險', '不利', '挑戰', '問題', '弱點'];
-      const bufferKeywords = ['優勢', '機會', '強項', '緩衝', '保護'];
-      
-      const lines = content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-      
-      let inRiskSection = false;
-      let inBufferSection = false;
-      
-      for (const line of lines) {
-        const lowerLine = line.toLowerCase();
-        
-        if (riskKeywords.some(keyword => lowerLine.includes(keyword))) {
-          inRiskSection = true;
-          inBufferSection = false;
-          continue;
-        }
-        
-        if (bufferKeywords.some(keyword => lowerLine.includes(keyword))) {
-          inRiskSection = false;
-          inBufferSection = true;
-          continue;
-        }
-        
-        if (inRiskSection && (line.match(/^\d+\./) || line.match(/^[•\-]/) || line.match(/^[⚠️❗❌]/))) {
-          const factor = line.replace(/^\d+\.\s*|[•\-]\s*|[⚠️❗❌]\s*/g, '').trim();
-          if (factor.length > 0 && positives.length < 5) {
-            positives.push(factor);
-          }
-        }
-        
-        if (inBufferSection && (line.match(/^\d+\./) || line.match(/^[•\-]/) || line.match(/^[✓✔]/))) {
-          const factor = line.replace(/^\d+\.\s*|[•\-]\s*|[✓✔]\s*/g, '').trim();
-          if (factor.length > 0 && negatives.length < 5) {
-            negatives.push(factor);
-          }
-        }
+
+      const buffersMatch = content.match(/【風險緩衝因素】([\s\S]*?)【評分項目詳情】/);
+      if (buffersMatch) {
+        const buffersText = buffersMatch[1];
+        negatives = extractNumberedItems(buffersText);
+        console.log('提取緩衝因素:', negatives.length);
       }
     }
 
-    // 如果沒有找到足夠的因素，生成默認因素
-    if (positives.length === 0) {
-      if (analysisType === 'news') {
-        positives = ['營收表現穩健', '市場地位穩固', '技術優勢明顯'];
-      } else {
-        positives = ['行業競爭加劇', '原材料成本上漲', '技術迭代快速'];
-      }
-    }
-    
-    if (negatives.length === 0) {
-      if (analysisType === 'news') {
-        negatives = ['行業競爭加劇', '成本壓力上升', '市場需求波動'];
-      } else {
-        negatives = ['財務結構穩健', '技術領先地位', '多元化客戶基礎'];
-      }
+    // 提取評分項目詳情
+    const scoreDetailsMatch = content.match(/【評分項目詳情】([\s\S]*?)【總分計算】/);
+    if (scoreDetailsMatch) {
+      const detailsText = scoreDetailsMatch[1];
+      scoreDetails = detailsText.split('\n').filter(line => 
+        line.includes('分 - ') && line.trim().length > 5
+      ).map(line => {
+        const match = line.match(/•\s*(.+?):\s*([+-]?\d+)分\s*-\s*(.+)/);
+        if (match) {
+          return {
+            item: match[1].trim(),
+            score: parseInt(match[2]),
+            reason: match[3].trim()
+          };
+        }
+        return null;
+      }).filter(item => item !== null);
+      console.log('提取評分項目:', scoreDetails.length);
     }
 
     // 提取建議
-    const suggestionPatterns = [
-      /建議[：:]([^\n]+)/i,
-      /投資建議[：:]([^\n]+)/i,
-      /風險建議[：:]([^\n]+)/i,
-      /結論[：:]([^\n]+)/i
-    ];
-    
-    for (const pattern of suggestionPatterns) {
-      const match = content.match(pattern);
-      if (match) {
-        recommendation = match[1].trim();
-        break;
-      }
-    }
-    
-    if (!recommendation) {
-      // 從最後幾行中找建議
-      const lines = content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-      const lastLines = lines.slice(-5);
-      
-      for (const line of lastLines) {
-        if (line.includes('建議') || line.includes('推荐') || line.includes('結論')) {
-          recommendation = line.replace(/.*[：:]\s*/, '').trim();
-          if (recommendation.length > 0) break;
-        }
-      }
-      
-      if (!recommendation && lines.length > 0) {
-        recommendation = lines[lines.length - 1];
-      }
+    const recommendationMatch = content.match(/【(投資建議|風險建議)】([\s\S]*?)(?=【|$)/);
+    if (recommendationMatch) {
+      recommendation = recommendationMatch[2].trim();
     }
 
-    // 生成評分詳情
-    const scoreDetails = generateScoreDetails(positives, negatives, score, analysisType);
-    
+    // 如果沒有找到結構化內容，使用備用解析
+    if (positives.length === 0 && negatives.length === 0) {
+      console.log('未找到結構化內容，使用備用解析');
+      return parseFallbackResponse(content, analysisType, stockName, score);
+    }
+
     // 格式化顯示內容
     const formattedContent = formatAnalysisContent(
-      positives, negatives, scoreDetails, summary, recommendation, score, analysisType, stockName
+      positives, 
+      negatives, 
+      scoreDetails,
+      summary, 
+      recommendation, 
+      score,
+      analysisType,
+      stockName
     );
 
     return {
@@ -458,8 +432,8 @@ function parseStructuredResponse(content, analysisType, stockName) {
       comment: recommendation || '分析完成',
       analysisType: analysisType,
       structured: true,
-      positives: positives.slice(0, 3),
-      negatives: negatives.slice(0, 3),
+      positives: positives,
+      negatives: negatives,
       scoreDetails: scoreDetails
     };
 
@@ -474,6 +448,66 @@ function parseStructuredResponse(content, analysisType, stockName) {
       structured: false
     };
   }
+}
+
+// 提取編號項目
+function extractNumberedItems(text) {
+  return text.split('\n')
+    .filter(line => line.trim().match(/^\d+\./))
+    .map(line => line.replace(/^\d+\.\s*/, '').trim())
+    .filter(item => item.length > 0);
+}
+
+// 備用解析方法
+function parseFallbackResponse(content, analysisType, stockName, score) {
+  const lines = content.split('\n').filter(line => line.trim().length > 0);
+  let positives = [];
+  let negatives = [];
+  let recommendation = '';
+  
+  // 簡單的關鍵詞匹配
+  lines.forEach(line => {
+    const lowerLine = line.toLowerCase();
+    if (lowerLine.includes('正面') || lowerLine.includes('利好') || lowerLine.includes('優勢') || 
+        lowerLine.includes('機會') || lowerLine.includes('成長')) {
+      if (line.length > 10 && !line.match(/^(正面|利好|優勢|機會|成長)/)) {
+        positives.push(line);
+      }
+    } else if (lowerLine.includes('負面') || lowerLine.includes('風險') || lowerLine.includes('挑戰') || 
+               lowerLine.includes('問題') || lowerLine.includes('不利')) {
+      if (line.length > 10 && !line.match(/^(負面|風險|挑戰|問題|不利)/)) {
+        negatives.push(line);
+      }
+    } else if (lowerLine.includes('建議') || lowerLine.includes('推薦') || lowerLine.includes('結論')) {
+      recommendation = line;
+    }
+  });
+  
+  // 如果沒有找到足夠的因素，使用默認值
+  if (positives.length === 0) {
+    positives = ['營收表現穩健', '市場地位穩固', '技術優勢明顯'];
+  }
+  if (negatives.length === 0) {
+    negatives = ['行業競爭加劇', '成本壓力上升', '市場需求波動'];
+  }
+  
+  const scoreDetails = generateScoreDetails(positives, negatives, score, analysisType);
+  const formattedContent = formatAnalysisContent(
+    positives, negatives, scoreDetails, '', recommendation, score, analysisType, stockName
+  );
+  
+  return {
+    success: true,
+    content: formattedContent,
+    rawContent: content,
+    score: score,
+    comment: recommendation || '基於綜合分析給出的建議',
+    analysisType: analysisType,
+    structured: false,
+    positives: positives.slice(0, 3),
+    negatives: negatives.slice(0, 3),
+    scoreDetails: scoreDetails
+  };
 }
 
 // 生成評分詳情

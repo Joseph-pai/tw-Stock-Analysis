@@ -99,8 +99,6 @@ exports.handler = async function(event, context) {
       errorMessage = 'API 配額已用盡';
     } else if (error.message.includes('timeout')) {
       errorMessage = '請求超時';
-    } else if (error.message.includes('502') || error.message.includes('503')) {
-      errorMessage = 'AI服務暫時不可用，請稍後重試';
     }
     
     return {
@@ -115,7 +113,7 @@ exports.handler = async function(event, context) {
   }
 };
 
-// DeepSeek 分析函數（帶重試機制）
+// DeepSeek 分析函數
 async function analyzeWithDeepSeek(stockId, stockName, apiKey, analysisType) {
   const prompt = analysisType === 'news' 
     ? createNewsAnalysisPrompt(stockId, stockName)
@@ -125,133 +123,84 @@ async function analyzeWithDeepSeek(stockId, stockName, apiKey, analysisType) {
   console.log('API Key 前10位:', apiKey.substring(0, 10) + '...');
   console.log('提示詞長度:', prompt.length);
 
-  const maxRetries = 3;
-  let lastError;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超時
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    console.log(`嘗試第 ${attempt} 次請求 (共 ${maxRetries} 次)...`);
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超時
+  try {
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+        stream: false
+      }),
+      signal: controller.signal
+    });
 
-    try {
-      const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: [
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 1500,  // 稍微減少以避免過長
-          stream: false
-        }),
-        signal: controller.signal
-      });
+    clearTimeout(timeoutId);
 
-      clearTimeout(timeoutId);
+    console.log('DeepSeek API 響應狀態:', response.status);
+    console.log('DeepSeek API 響應頭:', JSON.stringify(Object.fromEntries(response.headers)));
 
-      console.log(`DeepSeek API 第 ${attempt} 次嘗試響應狀態:`, response.status);
-
-      // 處理服務器錯誤（502/503/504）
-      if (response.status === 502 || response.status === 503 || response.status === 504) {
-        const errorText = await response.text();
-        console.log(`服務器 ${response.status} 錯誤:`, errorText);
-        
-        if (attempt < maxRetries) {
-          const waitTime = 2000 * attempt; // 遞增等待時間
-          console.log(`等待 ${waitTime}ms 後重試...`);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-          continue;
-        } else {
-          throw new Error(`DeepSeek API 服務器錯誤 ${response.status}，已重試 ${maxRetries} 次`);
-        }
-      }
-
-      if (!response.ok) {
-        let errorText;
-        try {
-          const errorData = await response.json();
-          errorText = JSON.stringify(errorData);
-          console.log('DeepSeek API 錯誤詳情:', errorData);
-        } catch (e) {
-          errorText = await response.text();
-          console.log('DeepSeek API 錯誤文本:', errorText);
-        }
-        
-        if (response.status === 401) {
-          throw new Error('DeepSeek API Key 無效或未授權');
-        } else if (response.status === 429) {
-          throw new Error('DeepSeek API 請求頻率限制');
-        } else if (response.status >= 500) {
-          throw new Error(`DeepSeek 服務器內部錯誤: ${response.status}`);
-        } else {
-          throw new Error(`DeepSeek API 錯誤 ${response.status}: ${errorText}`);
-        }
-      }
-
-      const data = await response.json();
-      console.log('DeepSeek API 響應接收成功');
-      console.log('響應數據結構:', Object.keys(data));
-      
-      if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
-        console.log('無效的響應數據:', data);
-        throw new Error('DeepSeek API 返回數據格式錯誤: 缺少choices');
+    if (!response.ok) {
+      let errorText;
+      try {
+        const errorData = await response.json();
+        errorText = JSON.stringify(errorData);
+        console.log('DeepSeek API 錯誤詳情:', errorData);
+      } catch (e) {
+        errorText = await response.text();
+        console.log('DeepSeek API 錯誤文本:', errorText);
       }
       
-      if (!data.choices[0].message || !data.choices[0].message.content) {
-        console.log('無效的消息數據:', data.choices[0]);
-        throw new Error('DeepSeek API 返回數據格式錯誤: 缺少message content');
-      }
-      
-      console.log(`DeepSeek API 請求成功，第 ${attempt} 次嘗試`);
-      return parseAIResponse(data.choices[0].message.content, analysisType);
-      
-    } catch (error) {
-      clearTimeout(timeoutId);
-      lastError = error;
-      
-      if (error.name === 'AbortError') {
-        console.log(`第 ${attempt} 次嘗試請求超時`);
-        if (attempt < maxRetries) {
-          const waitTime = 2000 * attempt;
-          console.log(`等待 ${waitTime}ms 後重試...`);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-          continue;
-        }
-      }
-      
-      // 如果是網路錯誤，嘗試重試
-      if ((error.message.includes('network') || 
-           error.message.includes('fetch') || 
-           error.message.includes('ECONNREFUSED') ||
-           error.message.includes('ENOTFOUND')) && 
-          attempt < maxRetries) {
-        console.log(`網路錯誤，等待後重試: ${error.message}`);
-        const waitTime = 2000 * attempt;
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        continue;
-      }
-      
-      // 最後一次嘗試仍然失敗
-      if (attempt === maxRetries) {
-        console.error(`DeepSeek API 所有 ${maxRetries} 次嘗試均失敗`);
-        throw lastError;
+      if (response.status === 401) {
+        throw new Error('DeepSeek API Key 無效或未授權');
+      } else if (response.status === 429) {
+        throw new Error('DeepSeek API 請求頻率限制');
+      } else if (response.status >= 500) {
+        throw new Error('DeepSeek 服務器內部錯誤: ' + response.status);
+      } else {
+        throw new Error(`DeepSeek API 錯誤 ${response.status}: ${errorText}`);
       }
     }
+
+    const data = await response.json();
+    console.log('DeepSeek API 響應接收成功');
+    console.log('響應數據結構:', Object.keys(data));
+    
+    if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+      console.log('無效的響應數據:', data);
+      throw new Error('DeepSeek API 返回數據格式錯誤: 缺少choices');
+    }
+    
+    if (!data.choices[0].message || !data.choices[0].message.content) {
+      console.log('無效的消息數據:', data.choices[0]);
+      throw new Error('DeepSeek API 返回數據格式錯誤: 缺少message content');
+    }
+    
+    return parseAIResponse(data.choices[0].message.content, analysisType);
+    
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('DeepSeek API 請求超時');
+    }
+    throw error;
   }
-  
-  throw lastError || new Error('DeepSeek API 請求失敗');
 }
 
-// GPT 分析函數（帶重試機制）
+// GPT 分析函數
 async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
   const prompt = analysisType === 'news' 
     ? createNewsAnalysisPrompt(stockId, stockName)
@@ -259,76 +208,49 @@ async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
 
   console.log('發送請求到 OpenAI API...');
 
-  const maxRetries = 2;
-  let lastError;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    console.log(`嘗試第 ${attempt} 次請求...`);
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+        stream: false
+      }),
+      signal: controller.signal
+    });
 
-    try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-3.5-turbo',
-          messages: [
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 1500,
-          stream: false
-        }),
-        signal: controller.signal
-      });
+    clearTimeout(timeoutId);
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        const errorText = JSON.stringify(errorData);
-        
-        // 處理服務器錯誤
-        if ((response.status === 502 || response.status === 503) && attempt < maxRetries) {
-          console.log(`OpenAI API ${response.status} 錯誤，等待重試...`);
-          await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
-          continue;
-        }
-        
-        throw new Error(`OpenAI API錯誤: ${response.status} - ${errorData.error?.message || errorText}`);
-      }
-
-      const data = await response.json();
-      console.log('OpenAI API 響應接收成功');
-      return parseAIResponse(data.choices[0].message.content, analysisType);
-      
-    } catch (error) {
-      clearTimeout(timeoutId);
-      lastError = error;
-      
-      if (error.name === 'AbortError') {
-        console.log(`請求超時，第 ${attempt} 次嘗試`);
-        if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
-          continue;
-        }
-      }
-      
-      if (attempt === maxRetries) {
-        throw lastError;
-      }
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`OpenAI API錯誤: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
     }
+
+    const data = await response.json();
+    console.log('OpenAI API 響應接收成功');
+    return parseAIResponse(data.choices[0].message.content, analysisType);
+    
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('OpenAI API 請求超時');
+    }
+    throw error;
   }
-  
-  throw lastError || new Error('OpenAI API 請求失敗');
 }
 
 // Gemini 分析函數
@@ -356,7 +278,7 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
         }],
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 1500
+          maxOutputTokens: 2000
         }
       }),
       signal: controller.signal
@@ -409,7 +331,7 @@ async function analyzeWithClaude(stockId, stockName, apiKey, analysisType) {
       },
       body: JSON.stringify({
         model: 'claude-3-sonnet-20240229',
-        max_tokens: 1500,
+        max_tokens: 2000,
         temperature: 0.7,
         messages: [{
           role: 'user',
@@ -470,7 +392,7 @@ async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
           content: prompt
         }],
         temperature: 0.7,
-        max_tokens: 1500,
+        max_tokens: 2000,
         stream: false
       }),
       signal: controller.signal
