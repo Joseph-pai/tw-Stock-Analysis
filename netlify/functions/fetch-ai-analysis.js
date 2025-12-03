@@ -253,7 +253,7 @@ async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
   }
 }
 
-// Gemini 分析函數 - 已修正
+// Gemini 分析函數
 async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   const prompt = analysisType === 'news' 
     ? createNewsAnalysisPrompt(stockId, stockName)
@@ -265,8 +265,7 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
-    // 使用最新的 Gemini API 端點和模型
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -279,28 +278,8 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
         }],
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 2000,
-          topP: 0.8,
-          topK: 40
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_NONE"
-          }
-        ]
+          maxOutputTokens: 2000
+        }
       }),
       signal: controller.signal
     });
@@ -309,123 +288,23 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('Gemini API錯誤詳情:', errorData);
-      
-      // 針對 404 錯誤提供更具體的建議
-      if (response.status === 404) {
-        throw new Error(`Gemini API錯誤 404: 模型可能不存在。請嘗試使用 gemini-1.5-flash 或其他可用模型`);
-      }
-      
       throw new Error(`Gemini API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
     }
 
     const data = await response.json();
     console.log('Gemini API 響應接收成功');
-    console.log('Gemini API 響應結構:', Object.keys(data));
     
-    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
-      console.error('Gemini API 返回數據格式錯誤:', data);
-      throw new Error('Gemini API 返回數據格式錯誤：缺少必要字段');
+    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+      throw new Error('Gemini API 返回數據格式錯誤');
     }
     
     const content = data.candidates[0].content.parts[0].text;
-    console.log('Gemini 回應內容長度:', content.length);
-    
     return parseAIResponse(content, analysisType);
     
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
       throw new Error('Gemini API 請求超時');
-    }
-    
-    // 如果 gemini-1.5-pro 失敗，嘗試 gemini-1.5-flash
-    if (error.message.includes('404') || error.message.includes('模型可能不存在')) {
-      console.log('嘗試使用 gemini-1.5-flash 模型...');
-      try {
-        return await analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType);
-      } catch (flashError) {
-        throw new Error(`Gemini API 全部嘗試失敗: ${error.message}, Flash模型錯誤: ${flashError.message}`);
-      }
-    }
-    
-    throw error;
-  }
-}
-
-// 備用 Gemini Flash 分析函數
-async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) {
-  const prompt = analysisType === 'news' 
-    ? createNewsAnalysisPrompt(stockId, stockName)
-    : createRiskAnalysisPrompt(stockId, stockName);
-
-  console.log('發送請求到 Gemini Flash API...');
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-  try {
-    // 使用 gemini-1.5-flash 模型
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 2000,
-          topP: 0.8,
-          topK: 40
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_NONE"
-          }
-        ]
-      }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Gemini Flash API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
-    }
-
-    const data = await response.json();
-    console.log('Gemini Flash API 響應接收成功');
-    
-    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
-      throw new Error('Gemini Flash API 返回數據格式錯誤');
-    }
-    
-    const content = data.candidates[0].content.parts[0].text;
-    return parseAIResponse(content, analysisType);
-    
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error('Gemini Flash API 請求超時');
     }
     throw error;
   }
