@@ -135,217 +135,44 @@ async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
   return parsedResult;
 }
 
-// Gemini 結構化分析 - *** 最終修正: 使用 v1beta 和 gemini-pro ***
+// Gemini 結構化分析
 async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   const prompt = createStructuredPrompt(stockId, stockName, analysisType);
-  const MODEL = 'gemini-pro'; // 降級到更通用的 Pro 模型名稱
-  const API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/'; // 降級到 v1beta 端點
 
-  console.log(`發送結構化請求到Gemini API (${MODEL})...`);
+  console.log('發送結構化請求到Gemini API...');
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超時
-
-  try {
-    // 保持 API Key 在 URL 查詢參數
-    const response = await fetch(`${API_ENDPOINT}${MODEL}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 2000,
-          topP: 0.8,
-          topK: 40
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_NONE"
-          }
-        ]
-      }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    console.log('Gemini API響應狀態:', response.status);
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Gemini API錯誤詳情:', errorData);
-      
-      // 如果 Pro 模型失敗，嘗試降級到 Flash 模型
-      if (response.status === 404 || response.status === 400) {
-        console.log(`${MODEL} 模型錯誤，嘗試降級到 Flash 模型...`);
-        return await analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType);
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      contents: [{
+        parts: [{
+          text: prompt
+        }]
+      }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 2000
       }
-      
-      throw new Error(`Gemini API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
-    }
+    })
+  });
 
-    const data = await response.json();
-    console.log('Gemini API響應數據結構:', Object.keys(data));
-    
-    // 增強的錯誤處理邏輯 (處理連線測試失敗的情況)
-    if (!data.candidates || data.candidates.length === 0) {
-      let errorMessage = 'Gemini API返回數據格式錯誤：缺少候選回覆 (candidates)。';
-      
-      if (data.promptFeedback && data.promptFeedback.blockReason) {
-        errorMessage = `Gemini API回覆被阻擋。原因: ${data.promptFeedback.blockReason}。`;
-      } else if (data.error && data.error.message) {
-         errorMessage = `Gemini API錯誤：${data.error.message}`;
-      }
-      
-      console.error('Gemini API返回數據結構錯誤:', data);
-      throw new Error(errorMessage);
-    }
-    
-    // 專門處理 '候選回覆結構不完整' 的情況
-    if (!data.candidates[0].content || !data.candidates[0].content.parts) {
-      if (data.candidates[0].finishReason && data.candidates[0].finishReason !== 'STOP') {
-         throw new Error(`Gemini API回覆被內容過濾阻擋。Finish Reason: ${data.candidates[0].finishReason}`);
-      }
-      console.error('Gemini API返回數據格式錯誤:', data);
-      throw new Error('Gemini API返回數據格式錯誤：候選回覆結構不完整。');
-    }
-    
+  console.log('Gemini API響應狀態:', response.status);
 
-    const content = data.candidates[0].content.parts[0].text;
-    console.log('Gemini回應內容長度:', content.length);
-    console.log('Gemini回應內容:', content.substring(0, 500));
-
-    const parsedResult = parseStructuredResponse(content, analysisType, stockName);
-    return parsedResult;
-    
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error('Gemini API請求超時');
-    }
-    throw error;
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(`Gemini API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
   }
-}
 
-// Gemini Flash 備用分析函數 - *** 最終修正: 使用 v1beta 和 gemini-flash ***
-async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) {
-  const prompt = createStructuredPrompt(stockId, stockName, analysisType);
-  const MODEL = 'gemini-flash'; // 降級到更通用的 Flash 模型名稱
-  const API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/'; // 降級到 v1beta 端點
+  const data = await response.json();
+  const content = data.candidates[0].content.parts[0].text;
 
-  console.log(`發送結構化請求到Gemini Flash API (${MODEL})...`);
+  console.log('Gemini回應內容:', content.substring(0, 500));
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-  try {
-    // 保持 API Key 在 URL 查詢參數
-    const response = await fetch(`${API_ENDPOINT}${MODEL}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 2000,
-          topP: 0.8,
-          topK: 40
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_NONE"
-          }
-        ]
-      }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    console.log('Gemini Flash API響應狀態:', response.status);
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Gemini Flash API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
-    }
-
-    const data = await response.json();
-    
-    // 增強的錯誤處理邏輯 (處理連線測試失敗的情況)
-    if (!data.candidates || data.candidates.length === 0) {
-      let errorMessage = 'Gemini Flash API返回數據格式錯誤：缺少候選回覆 (candidates)。';
-      
-      if (data.promptFeedback && data.promptFeedback.blockReason) {
-        errorMessage = `Gemini Flash API回覆被阻擋。原因: ${data.promptFeedback.blockReason}。`;
-      } else if (data.error && data.error.message) {
-         errorMessage = `Gemini Flash API錯誤：${data.error.message}`;
-      }
-      
-      console.error('Gemini API返回數據結構錯誤:', data);
-      throw new Error(errorMessage);
-    }
-    
-    // 專門處理 '候選回覆結構不完整' 的情況
-    if (!data.candidates[0].content || !data.candidates[0].content.parts) {
-      if (data.candidates[0].finishReason && data.candidates[0].finishReason !== 'STOP') {
-         throw new Error(`Gemini API回覆被內容過濾阻擋。Finish Reason: ${data.candidates[0].finishReason}`);
-      }
-      console.error('Gemini API返回數據格式錯誤:', data);
-      throw new Error('Gemini API返回數據格式錯誤：候選回覆結構不完整。');
-    }
-    
-    const content = data.candidates[0].content.parts[0].text;
-    console.log('Gemini Flash回應內容:', content.substring(0, 500));
-
-    const parsedResult = parseStructuredResponse(content, analysisType, stockName);
-    return parsedResult;
-    
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error('Gemini Flash API請求超時');
-    }
-    throw error;
-  }
+  const parsedResult = parseStructuredResponse(content, analysisType, stockName);
+  return parsedResult;
 }
 
 // Claude 結構化分析
@@ -428,15 +255,9 @@ async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
   return parsedResult;
 }
 
-// 創建結構化提示詞 - 日期格式為西元年
+// 創建結構化提示詞
 function createStructuredPrompt(stockId, stockName, analysisType) {
-  // 確保使用西元年 YYYY/MM/DD 格式
-  const now = new Date();
-  const year = now.getFullYear(); 
-  const month = (now.getMonth() + 1).toString().padStart(2, '0');
-  const day = now.getDate().toString().padStart(2, '0');
-  const currentDate = `${year}/${month}/${day}`; // YYYY/MM/DD
-
+  const currentDate = new Date().toLocaleDateString('zh-TW');
   
   if (analysisType === 'news') {
     return `作為專業股票分析師，請分析台灣股票 ${stockId} ${stockName} 在 ${currentDate} 的最新市場消息面。
