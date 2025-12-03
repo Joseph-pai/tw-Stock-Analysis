@@ -135,7 +135,7 @@ async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
   return parsedResult;
 }
 
-// Gemini 結構化分析 - 已修正 (使用 gemini-2.5-pro 和 X-goog-api-key)
+// Gemini 結構化分析 
 async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   const prompt = createStructuredPrompt(stockId, stockName, analysisType);
   const MODEL = 'gemini-2.5-pro'; // 使用最新的 Pro 模型別名
@@ -208,7 +208,7 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
     const data = await response.json();
     console.log('Gemini API響應數據結構:', Object.keys(data));
     
-    // *** 修正: 增強的錯誤處理邏輯 ***
+    // 增強的錯誤處理邏輯 (檢查內容過濾)
     if (!data.candidates || data.candidates.length === 0) {
       let errorMessage = 'Gemini API返回數據格式錯誤：缺少候選回覆 (candidates)。';
       
@@ -226,7 +226,7 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
       console.error('Gemini API返回數據格式錯誤:', data);
       throw new Error('Gemini API返回數據格式錯誤：候選回覆結構不完整。');
     }
-    // *** 修正結束 ***
+    
 
     const content = data.candidates[0].content.parts[0].text;
     console.log('Gemini回應內容長度:', content.length);
@@ -244,7 +244,7 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   }
 }
 
-// Gemini Flash 備用分析函數 - 已修正 (使用 gemini-2.5-flash 和 X-goog-api-key)
+// Gemini Flash 備用分析函數 
 async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) {
   const prompt = createStructuredPrompt(stockId, stockName, analysisType);
   const MODEL = 'gemini-2.5-flash'; // 使用最新的 Flash 模型別名
@@ -308,7 +308,7 @@ async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) 
 
     const data = await response.json();
     
-    // *** 修正: 增強的錯誤處理邏輯 ***
+    // 增強的錯誤處理邏輯 (檢查內容過濾)
     if (!data.candidates || data.candidates.length === 0) {
       let errorMessage = 'Gemini Flash API返回數據格式錯誤：缺少候選回覆 (candidates)。';
       
@@ -326,7 +326,6 @@ async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) 
       console.error('Gemini API返回數據格式錯誤:', data);
       throw new Error('Gemini API返回數據格式錯誤：候選回覆結構不完整。');
     }
-    // *** 修正結束 ***
     
     const content = data.candidates[0].content.parts[0].text;
     console.log('Gemini Flash回應內容:', content.substring(0, 500));
@@ -423,9 +422,15 @@ async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
   return parsedResult;
 }
 
-// 創建結構化提示詞
+// 創建結構化提示詞 (已修正日期格式為西元年)
 function createStructuredPrompt(stockId, stockName, analysisType) {
-  const currentDate = new Date().toLocaleDateString('zh-TW');
+  // *** 修正: 確保使用西元年 YYYY/MM/DD 格式 ***
+  const now = new Date();
+  const year = now.getFullYear(); 
+  const month = (now.getMonth() + 1).toString().padStart(2, '0');
+  const day = now.getDate().toString().padStart(2, '0');
+  const currentDate = `${year}/${month}/${day}`; // YYYY/MM/DD
+
   
   if (analysisType === 'news') {
     return `作為專業股票分析師，請分析台灣股票 ${stockId} ${stockName} 在 ${currentDate} 的最新市場消息面。
