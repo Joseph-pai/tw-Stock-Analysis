@@ -135,11 +135,11 @@ async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
   return parsedResult;
 }
 
-// Gemini 結構化分析 - 已修正 (使用 gemini-2.5-pro 和 v1 穩定版)
+// Gemini 結構化分析 - 已修正 (使用 gemini-2.5-pro 和 X-goog-api-key)
 async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   const prompt = createStructuredPrompt(stockId, stockName, analysisType);
-  const MODEL = 'gemini-2.5-pro'; // 修正: 使用最新的 Pro 模型別名
-  const API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1/models/'; // 修正: 使用 v1 穩定版 API
+  const MODEL = 'gemini-2.5-pro'; // 使用最新的 Pro 模型別名
+  const API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1/models/'; // 使用 v1 穩定版 API
 
   console.log(`發送結構化請求到Gemini API (${MODEL})...`);
 
@@ -147,12 +147,12 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超時
 
   try {
-    // 修正: 將 API Key 放入 Authorization Header，並使用 v1 穩定版端點
+    // 修正: 將 API Key 放入 X-goog-api-key Header
     const response = await fetch(`${API_ENDPOINT}${MODEL}:generateContent`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}` // 修正: 透過 Header 傳遞 Key
+        'X-goog-api-key': apiKey // 修正: 使用 X-goog-api-key Header 傳遞 Key
       },
       body: JSON.stringify({
         contents: [{
@@ -229,11 +229,11 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   }
 }
 
-// Gemini Flash 備用分析函數 - 已修正 (使用 gemini-2.5-flash 和 v1 穩定版)
+// Gemini Flash 備用分析函數 - 已修正 (使用 gemini-2.5-flash 和 X-goog-api-key)
 async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) {
   const prompt = createStructuredPrompt(stockId, stockName, analysisType);
-  const MODEL = 'gemini-2.5-flash'; // 修正: 使用最新的 Flash 模型別名
-  const API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1/models/'; // 修正: 使用 v1 穩定版 API
+  const MODEL = 'gemini-2.5-flash'; // 使用最新的 Flash 模型別名
+  const API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1/models/'; // 使用 v1 穩定版 API
 
   console.log(`發送結構化請求到Gemini Flash API (${MODEL})...`);
 
@@ -241,12 +241,12 @@ async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) 
   const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
-    // 修正: 將 API Key 放入 Authorization Header，並使用 v1 穩定版端點
+    // 修正: 將 API Key 放入 X-goog-api-key Header
     const response = await fetch(`${API_ENDPOINT}${MODEL}:generateContent`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}` // 修正: 透過 Header 傳遞 Key
+        'X-goog-api-key': apiKey // 修正: 使用 X-goog-api-key Header 傳遞 Key
       },
       body: JSON.stringify({
         contents: [{
