@@ -173,108 +173,105 @@
                 </div>
 
                 <!-- AI 分析結果顯示 -->
-                <div id="aiAnalysisResult" class="mt-4" style="display: none;">
-                    <ul class="nav nav-tabs" id="aiResultTabs" role="tablist">
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="news-analysis-tab-btn" data-bs-toggle="tab" data-bs-target="#news-analysis-tab" type="button" role="tab">
-                                市場消息面分析
-                            </button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="risk-analysis-tab-btn" data-bs-toggle="tab" data-bs-target="#risk-analysis-tab" type="button" role="tab">
-                                風險面分析
-                            </button>
-                        </li>
-                    </ul>
+<!-- AI 分析結果顯示 -->
+<div id="aiAnalysisResult" class="mt-4" style="display: none;">
+    <ul class="nav nav-tabs" id="aiResultTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="news-analysis-tab-btn" data-bs-toggle="tab" data-bs-target="#news-analysis-tab" type="button" role="tab">
+                市場消息面分析
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="risk-analysis-tab-btn" data-bs-toggle="tab" data-bs-target="#risk-analysis-tab" type="button" role="tab">
+                風險面分析
+            </button>
+        </li>
+    </ul>
+    
+    <div class="tab-content mt-3">
+        <!-- 市場消息面分析分頁 -->
+        <div class="tab-pane fade show active" id="news-analysis-tab" role="tabpanel">
+            <div class="card">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <strong>📰 市場消息面分析</strong>
+                    <div>
+                        <span class="me-2">消息面評分:</span>
+                        <span id="newsScoreDisplay" class="fs-3 fw-bold text-white">0</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="mb-4">
+                        <h6>主要因素分析:</h6>
+                        <ul class="list-group list-group-flush" id="newsFactorsList">
+                            <!-- 因素列表將動態生成 -->
+                        </ul>
+                    </div>
                     
-                    <div class="tab-content mt-3">
-                        <!-- 市場消息面分析分頁 -->
-                        <div class="tab-pane fade show active" id="news-analysis-tab" role="tabpanel">
-                            <div class="card">
-                                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-                                    <strong>📰 市場消息面分析</strong>
-                                    <div>
-                                        <span class="me-2">消息面評分:</span>
-                                        <span id="newsScoreDisplay" class="fs-3 fw-bold text-white">0</span>
-                                    </div>
-                                </div>
-                                <div class="card-body">
-                                    <div class="mb-4">
-                                        <h6>主要因素分析:</h6>
-                                        <ul class="list-group list-group-flush" id="newsFactorsList">
-                                            <!-- 因素列表將動態生成 -->
-                                        </ul>
-                                    </div>
-                                    
-                                    <div class="mb-4">
-                                        <h6>重點總結:</h6>
-                                        <div class="border rounded p-3 bg-light">
-                                            <p id="newsSummary" class="mb-0"></p>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="d-grid gap-2">
-                                        <button class="btn btn-success" id="applyNewsScore" data-score="0">
-                                            ✅ 應用消息面評分到專業評分表
-                                        </button>
-                                    </div>
-                                    
-                                    <div class="mt-4">
-                                        <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#newsRawContentCollapse">
-                                            查看完整分析報告
-                                        </button>
-                                        <div class="collapse mt-2" id="newsRawContentCollapse">
-                                            <div class="card card-body">
-                                                <pre id="newsRawContent" style="white-space: pre-wrap; font-family: inherit; max-height: 300px; overflow-y: auto;"></pre>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                    <div class="mb-4">
+                        <h6>重點總結:</h6>
+                        <div class="border rounded p-3 bg-light">
+                            <p id="newsSummary" class="mb-0"></p>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-success" id="applyNewsScore" data-score="0">
+                            ✅ 應用消息面評分到專業評分表
+                        </button>
+                    </div>
+                    
+                    <div class="mt-4">
+                        <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#newsRawContentCollapse">
+                            查看完整分析報告
+                        </button>
+                        <div class="collapse mt-2" id="newsRawContentCollapse">
+                            <div class="card card-body">
+                                <pre id="newsRawContent" style="white-space: pre-wrap; font-family: inherit; max-height: 300px; overflow-y: auto;"></pre>
                             </div>
                         </div>
-                        
-                        <!-- 風險面分析分頁 -->
-                        <div class="tab-pane fade" id="risk-analysis-tab" role="tabpanel">
-                            <div class="card">
-                                <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
-                                    <strong>⚠️ 風險面分析</strong>
-                                    <div>
-                                        <span class="me-2">風險面評分:</span>
-                                        <span id="riskScoreDisplay" class="fs-3 fw-bold text-dark">0</span>
-                                    </div>
-                                </div>
-                                <div class="card-body">
-                                    <div class="mb-4">
-                                        <h6>主要風險因素:</h6>
-                                        <ul class="list-group list-group-flush" id="riskFactorsList">
-                                            <!-- 風險因素列表將動態生成 -->
-                                        </ul>
-                                    </div>
-                                    
-                                    <div class="mb-4">
-                                        <h6>重點總結:</h6>
-                                        <div class="border rounded p-3 bg-light">
-                                            <p id="riskSummary" class="mb-0"></p>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="d-grid gap-2">
-                                        <button class="btn btn-warning" id="applyRiskScore" data-score="0">
-                                            ⚠️ 應用風險面評分到專業評分表
-                                        </button>
-                                    </div>
-                                    
-                                    <div class="mt-4">
-                                        <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#riskRawContentCollapse">
-                                            查看完整分析報告
-                                        </button>
-                                        <div class="collapse mt-2" id="riskRawContentCollapse">
-                                            <div class="card card-body">
-                                                <pre id="riskRawContent" style="white-space: pre-wrap; font-family: inherit; max-height: 300px; overflow-y: auto;"></pre>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 風險面分析分頁 -->
+        <div class="tab-pane fade" id="risk-analysis-tab" role="tabpanel">
+            <div class="card">
+                <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+                    <strong>⚠️ 風險面分析</strong>
+                    <div>
+                        <span class="me-2">風險面評分:</span>
+                        <span id="riskScoreDisplay" class="fs-3 fw-bold text-dark">0</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="mb-4">
+                        <h6>主要風險因素:</h6>
+                        <ul class="list-group list-group-flush" id="riskFactorsList">
+                            <!-- 風險因素列表將動態生成 -->
+                        </ul>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h6>重點總結:</h6>
+                        <div class="border rounded p-3 bg-light">
+                            <p id="riskSummary" class="mb-0"></p>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-warning" id="applyRiskScore" data-score="0">
+                            ⚠️ 應用風險面評分到專業評分表
+                        </button>
+                    </div>
+                    
+                    <div class="mt-4">
+                        <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#riskRawContentCollapse">
+                            查看完整分析報告
+                        </button>
+                        <div class="collapse mt-2" id="riskRawContentCollapse">
+                            <div class="card card-body">
+                                <pre id="riskRawContent" style="white-space: pre-wrap; font-family: inherit; max-height: 300px; overflow-y: auto;"></pre>
                             </div>
                         </div>
                     </div>
@@ -679,139 +676,198 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ================= AI分析按鈕事件處理器 =================
-    document.getElementById('aiAnalyzeBtn').addEventListener('click', async function() {
-        const symbol = document.getElementById('stockSelect').value.trim();
-        if (!symbol) {
-            alert('請先選擇股票');
-            return;
-        }
-
-        if (!currentAiApiKey) {
-            alert('請先輸入 API Key');
-            return;
-        }
-
-        // 獲取股票名稱
-        const stockSelect = document.getElementById('stockSelect');
-        const selectedOption = stockSelect.options[stockSelect.selectedIndex];
-        let stockName = selectedOption.textContent.replace(/^\d+\s/, '');
-        
-        if (!stockName || stockName === symbol) {
-            const stockInfo = stockData.find(s => s.stock_id === symbol);
-            stockName = stockInfo ? stockInfo.stock_name : symbol;
-        }
-
-        const analysisType = document.querySelector('input[name="analysisType"]:checked').value;
-        const analyzeBtn = this;
-        const spinner = document.getElementById('aiSpinner');
-        
-        analyzeBtn.disabled = true;
-        spinner.style.display = 'inline-block';
-        
-        document.getElementById('aiKeyStatus').innerHTML = 
-            `<span class="badge bg-info">🔄 ${currentAiPlatform} 分析中... (約20秒)</span>`;
-        
-        try {
-            log(`開始AI分析: ${symbol} ${stockName}, 平台: ${currentAiPlatform}, 類型: ${analysisType}`);
-            
-            // 使用統一的提示詞
-            const prompt = `請分析${stockName}（股票代碼：${symbol}）的市場消息面與風險面，重點整理總結，各自給出-10～+10的評分。`;
-            
-            log(`發送提示詞: ${prompt.substring(0, 100)}...`);
-            
-            // 使用現有的Netlify Function進行分析
-            const response = await fetch('/.netlify/functions/fetch-ai-analysis', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    stockId: symbol,
-                    stockName: stockName,
-                    platform: currentAiPlatform,
-                    apiKey: currentAiApiKey,
-                    analysisType: 'news' // 使用news類型，但提示詞包含兩方面分析
-                })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `HTTP ${response.status}`);
-            }
-
-            const result = await response.json();
-            
-            if (result.error) {
-                throw new Error(result.error);
-            }
-
-            log(`✅ ${currentAiPlatform} 分析完成，評分: ${result.score}`);
-            
-            // 使用新的顯示模組顯示結果
-            window.aiAnalysisDisplay.displayAnalysisResult(
-                result,
-                analysisType,
-                stockName
-            );
-            
-            document.getElementById('aiKeyStatus').innerHTML = 
-                `<span class="badge bg-success">✓ ${currentAiPlatform} 分析完成</span>`;
-            
-        } catch (error) {
-            document.getElementById('aiKeyStatus').innerHTML = 
-                `<span class="badge bg-danger">✗ ${currentAiPlatform} 分析失敗</span>`;
-            log(`❌ ${currentAiPlatform} AI分析失敗: ${error.message}`);
-            alert(`${currentAiPlatform} 分析失敗: ${error.message}`);
-        } finally {
-            analyzeBtn.disabled = false;
-            spinner.style.display = 'none';
-        }
-    });
-
-    // ================= 應用評分按鈕事件處理器 =================
-    document.getElementById('applyNewsScore').addEventListener('click', function() {
-        const score = parseInt(this.dataset.score || '0');
-        applyAiScoreToSystem(score, 'news');
-    });
-
-    document.getElementById('applyRiskScore').addEventListener('click', function() {
-        const score = parseInt(this.dataset.score || '0');
-        applyAiScoreToSystem(score, 'risk');
-    });
-
-    // 應用評分到系統
-    function applyAiScoreToSystem(score, analysisType) {
-        const targetField = analysisType === 'news' ? 'news' : 'risk';
-        const weight = weights[targetField] || 10;
-        
-        // 計算加權分數
-        const weightedScore = Math.round((score / 10) * weight);
-        
-        // 更新對應的評分顯示
-        const scoreElement = document.getElementById(`score_${targetField}`);
-        if (scoreElement) {
-            scoreElement.textContent = weightedScore;
-            scoreElement.className = `badge ${weightedScore >= 0 ? 'badge-pos' : 'badge-neg'} fs-5`;
-        }
-        
-        // 更新說明文字
-        const descElement = scoreElement?.closest('tr')?.querySelector('td:nth-child(4)');
-        if (descElement) {
-            const typeName = analysisType === 'news' ? '消息面' : '風險面';
-            descElement.innerHTML = `<small>AI ${typeName}分析評分: ${score} → 加權: ${weightedScore}</small>`;
-        }
-        
-        // 更新總分
-        updateTotalScore();
-        
-        log(`✅ AI ${analysisType === 'news' ? '消息面' : '風險面'}評分 ${score} 已應用到系統 (加權: ${weightedScore})`);
-        alert(`AI ${analysisType === 'news' ? '消息面' : '風險面'}評分已成功應用到專業評分表！`);
+// ================= AI分析按鈕事件處理器 =================
+document.getElementById('aiAnalyzeBtn').addEventListener('click', async function() {
+    const symbol = document.getElementById('stockSelect').value.trim();
+    if (!symbol) {
+        alert('請先選擇股票');
+        return;
     }
 
-    // 修改清除分析按鈕
-    document.getElementById('clearAiAnalysis').addEventListener('click', function() {
+    if (!currentAiApiKey) {
+        alert('請先輸入 API Key');
+        return;
+    }
+
+    // 獲取股票名稱
+    const stockSelect = document.getElementById('stockSelect');
+    const selectedOption = stockSelect.options[stockSelect.selectedIndex];
+    let stockName = selectedOption.textContent.replace(/^\d+\s/, '');
+    
+    if (!stockName || stockName === symbol) {
+        const stockInfo = stockData.find(s => s.stock_id === symbol);
+        stockName = stockInfo ? stockInfo.stock_name : symbol;
+    }
+
+    const analysisType = document.querySelector('input[name="analysisType"]:checked').value;
+    const analyzeBtn = this;
+    const spinner = document.getElementById('aiSpinner');
+    
+    analyzeBtn.disabled = true;
+    spinner.style.display = 'inline-block';
+    
+    document.getElementById('aiKeyStatus').innerHTML = 
+        `<span class="badge bg-info">🔄 ${currentAiPlatform} 分析中... (約20秒)</span>`;
+    
+    try {
+        log(`開始AI分析: ${symbol} ${stockName}, 平台: ${currentAiPlatform}, 類型: ${analysisType}`);
+        
+        // 使用統一的提示詞
+        const prompt = `請分析${stockName}（股票代碼：${symbol}）的市場消息面與風險面，重點整理總結，各自給出-10～+10的評分。`;
+        
+        log(`發送提示詞: ${prompt.substring(0, 100)}...`);
+        
+        // 使用現有的Netlify Function進行分析
+        const response = await fetch('/.netlify/functions/fetch-ai-analysis', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                stockId: symbol,
+                stockName: stockName,
+                platform: currentAiPlatform,
+                apiKey: currentAiApiKey,
+                analysisType: 'news' // 使用news類型
+            }),
+            signal: AbortSignal.timeout(45000) // 45秒超時
+        });
+
+        // 檢查響應狀態
+        if (!response.ok) {
+            let errorText = '';
+            try {
+                const errorData = await response.text();
+                errorText = errorData.substring(0, 200);
+                log(`伺服器返回錯誤: ${errorText}`);
+            } catch (e) {
+                errorText = `HTTP ${response.status} ${response.statusText}`;
+            }
+            throw new Error(`伺服器錯誤: ${errorText}`);
+        }
+
+        // 嘗試解析JSON
+        let result;
+        const responseText = await response.text();
+        log(`收到回應，長度: ${responseText.length}`);
+        
+        try {
+            result = JSON.parse(responseText);
+        } catch (parseError) {
+            log(`JSON解析失敗: ${parseError.message}`);
+            log(`回應內容前200字: ${responseText.substring(0, 200)}`);
+            throw new Error('伺服器返回的數據格式不正確（不是有效的JSON）');
+        }
+        
+        // 檢查是否有錯誤
+        if (result.error) {
+            log(`API返回錯誤: ${result.error}`);
+            throw new Error(result.error);
+        }
+        
+        if (!result.success && result.error) {
+            log(`API返回錯誤: ${result.error}`);
+            throw new Error(result.error);
+        }
+
+        log(`✅ ${currentAiPlatform} 分析完成，評分: ${result.score || 0}`);
+        
+        // 確保aiAnalysisDisplay存在
+        if (typeof window.aiAnalysisDisplay === 'undefined') {
+            log('嚴重錯誤: aiAnalysisDisplay未定義，請檢查ai-analysis-display.js是否正確載入');
+            throw new Error('AI顯示模組未載入，請刷新頁面重試');
+        }
+        
+        // 使用顯示模組顯示結果
+        window.aiAnalysisDisplay.displayAnalysisResult(
+            result,
+            analysisType,
+            stockName
+        );
+        
+        document.getElementById('aiKeyStatus').innerHTML = 
+            `<span class="badge bg-success">✓ ${currentAiPlatform} 分析完成</span>`;
+        
+    } catch (error) {
+        console.error('AI分析錯誤:', error);
+        document.getElementById('aiKeyStatus').innerHTML = 
+            `<span class="badge bg-danger">✗ ${currentAiPlatform} 分析失敗</span>`;
+        log(`❌ ${currentAiPlatform} AI分析失敗: ${error.message}`);
+        
+        // 顯示錯誤信息
+        try {
+            if (typeof window.aiAnalysisDisplay !== 'undefined') {
+                window.aiAnalysisDisplay.showError(error.message, stockName || symbol);
+            } else {
+                // 如果顯示模組不存在，顯示基本錯誤
+                alert(`${currentAiPlatform} 分析失敗: ${error.message}\n\n請檢查:\n1. 網絡連接\n2. API Key是否正確\n3. 頁面是否完全載入`);
+            }
+        } catch (uiError) {
+            console.error('顯示錯誤UI失敗:', uiError);
+            alert(`${currentAiPlatform} 分析失敗: ${error.message}`);
+        }
+        
+    } finally {
+        analyzeBtn.disabled = false;
+        spinner.style.display = 'none';
+    }
+});
+
+    // ================= 應用評分按鈕事件處理器 =================
+// ================= 應用評分按鈕事件處理器 =================
+document.getElementById('applyNewsScore').addEventListener('click', function() {
+    const score = parseInt(this.dataset.score || '0');
+    console.log('應用消息面評分:', score);
+    applyAiScoreToSystem(score, 'news');
+});
+
+document.getElementById('applyRiskScore').addEventListener('click', function() {
+    const score = parseInt(this.dataset.score || '0');
+    console.log('應用風險面評分:', score);
+    applyAiScoreToSystem(score, 'risk');
+});
+
+// 應用評分到系統
+function applyAiScoreToSystem(score, analysisType) {
+    const targetField = analysisType === 'news' ? 'news' : 'risk';
+    const weight = weights[targetField] || 10;
+    
+    // 計算加權分數
+    const weightedScore = Math.round((score / 10) * weight);
+    
+    console.log(`應用評分: ${score} -> 加權: ${weightedScore} (權重: ${weight}%)`);
+    
+    // 更新對應的評分顯示
+    const scoreElement = document.getElementById(`score_${targetField}`);
+    if (scoreElement) {
+        scoreElement.textContent = weightedScore;
+        scoreElement.className = `badge ${weightedScore >= 0 ? 'badge-pos' : 'badge-neg'} fs-5`;
+    }
+    
+    // 更新說明文字
+    const descElement = scoreElement?.closest('tr')?.querySelector('td:nth-child(4)');
+    if (descElement) {
+        const typeName = analysisType === 'news' ? '消息面' : '風險面';
+        descElement.innerHTML = `<small>AI ${typeName}分析評分: ${score} → 加權: ${weightedScore}</small>`;
+    }
+    
+    // 更新總分
+    updateTotalScore();
+    
+    log(`✅ AI ${analysisType === 'news' ? '消息面' : '風險面'}評分 ${score} 已應用到系統 (加權: ${weightedScore})`);
+    alert(`AI ${analysisType === 'news' ? '消息面' : '風險面'}評分已成功應用到專業評分表！`);
+}
+
+// 修改清除分析按鈕
+document.getElementById('clearAiAnalysis').addEventListener('click', function() {
+    console.log('清除AI分析');
+    if (typeof window.aiAnalysisDisplay !== 'undefined') {
         window.aiAnalysisDisplay.clearAnalysis();
-    });
+    } else {
+        // 簡單清除
+        document.getElementById('aiAnalysisResult').style.display = 'none';
+    }
+});
 
     // ================= 核心 API 函數 =================
 
