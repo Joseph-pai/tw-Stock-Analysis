@@ -31,6 +31,7 @@
         .basis-box { background: rgba(0,0,0,0.3); border-left: 4px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 4px; }
         td, th { vertical-align: middle; }
         .stock-search { max-width: 300px; }
+        .import-btn { margin-left: 10px; font-size: 0.8rem; padding: 2px 8px; }
     </style>
 </head>
 <body>
@@ -226,7 +227,9 @@
                             <!-- 消息面評分表格 -->
                             <div id="newsScoreTable" class="card mb-4" style="display: none;">
                                 <div class="card-header bg-success text-white">
-                                    <strong>📰 消息面評分明細</strong>
+                                    <strong>📰 消息面分析 (評分: <span id="newsScoreValue">0</span>)
+                                        <button class="btn btn-sm btn-outline-light import-btn" id="importNewsScore">導入消息面</button>
+                                    </strong>
                                 </div>
                                 <div class="card-body">
                                     <table class="table table-striped">
@@ -258,7 +261,9 @@
                             <!-- 風險面評分表格 -->
                             <div id="riskScoreTable" class="card" style="display: none;">
                                 <div class="card-header bg-warning text-dark">
-                                    <strong>⚠️ 風險面評分明細</strong>
+                                    <strong>⚠️ 風險面分析 (評分: <span id="riskScoreValue">0</span>)
+                                        <button class="btn btn-sm btn-outline-dark import-btn" id="importRiskScore">導入風險面</button>
+                                    </strong>
                                 </div>
                                 <div class="card-body">
                                     <table class="table table-striped">
@@ -808,6 +813,20 @@ document.addEventListener('DOMContentLoaded', () => {
         analysisHistory.risk = null;
     });
 
+    // 導入消息面評分按鈕
+    document.getElementById('importNewsScore').addEventListener('click', function() {
+        const score = parseInt(document.getElementById('newsScoreValue').textContent);
+        applyAiScoreToSystem(score, 'news');
+        alert(`消息面評分 ${score} 已導入到專業評分表！`);
+    });
+
+    // 導入風險面評分按鈕
+    document.getElementById('importRiskScore').addEventListener('click', function() {
+        const score = parseInt(document.getElementById('riskScoreValue').textContent);
+        applyAiScoreToSystem(score, 'risk');
+        alert(`風險面評分 ${score} 已導入到專業評分表！`);
+    });
+
     // 應用 AI 評分到評分系統
     function applyAiScoreToSystem(score, analysisType) {
         const targetField = analysisType === 'news' ? 'news' : 'risk';
@@ -834,7 +853,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateTotalScore();
         
         log(`✅ AI ${analysisType === 'news' ? '消息面' : '風險面'}評分 ${score} 已應用到系統 (加權: ${weightedScore})`);
-        alert(`AI 評分已成功應用到${analysisType === 'news' ? '消息面' : '風險面'}！`);
     }
 
     // ================= 分析類型切換監聽 =================
@@ -870,6 +888,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // 隱藏所有表格
         newsTable.style.display = 'none';
         riskTable.style.display = 'none';
+        
+        // 更新評分顯示
+        document.getElementById('newsScoreValue').textContent = score > 0 ? `+${score}` : score;
+        document.getElementById('riskScoreValue').textContent = score > 0 ? `+${score}` : score;
         
         if (analysisType === 'news') {
             // 顯示消息面評分表格
