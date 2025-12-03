@@ -135,7 +135,7 @@ async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
   return parsedResult;
 }
 
-// Gemini 結構化分析 
+// Gemini 結構化分析 - *** 修正 API Key 放置、模型名稱和錯誤處理邏輯 ***
 async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   const prompt = createStructuredPrompt(stockId, stockName, analysisType);
   const MODEL = 'gemini-2.5-pro'; // 使用最新的 Pro 模型別名
@@ -147,12 +147,12 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超時
 
   try {
-    // 將 API Key 放入 X-goog-api-key Header
+    // 修正: 將 API Key 放入 X-goog-api-key Header
     const response = await fetch(`${API_ENDPOINT}${MODEL}:generateContent`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-goog-api-key': apiKey // 使用 X-goog-api-key Header 傳遞 Key
+        'X-goog-api-key': apiKey // *** 修正點: 使用 X-goog-api-key Header ***
       },
       body: JSON.stringify({
         contents: [{
@@ -208,12 +208,12 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
     const data = await response.json();
     console.log('Gemini API響應數據結構:', Object.keys(data));
     
-    // 增強的錯誤處理邏輯 (檢查內容過濾)
+    // *** 修正: 增強的錯誤處理邏輯（修復連線測試錯誤） ***
     if (!data.candidates || data.candidates.length === 0) {
       let errorMessage = 'Gemini API返回數據格式錯誤：缺少候選回覆 (candidates)。';
       
       if (data.promptFeedback && data.promptFeedback.blockReason) {
-        errorMessage = `Gemini API回覆被阻擋。原因: ${data.promptFeedback.blockReason}。請檢查您的提示內容是否被視為不安全內容(例如金融建議)。`;
+        errorMessage = `Gemini API回覆被阻擋。原因: ${data.promptFeedback.blockReason}。`;
       } else if (data.error && data.error.message) {
          errorMessage = `Gemini API錯誤：${data.error.message}`;
       }
@@ -226,7 +226,7 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
       console.error('Gemini API返回數據格式錯誤:', data);
       throw new Error('Gemini API返回數據格式錯誤：候選回覆結構不完整。');
     }
-    
+    // *** 修正結束 ***
 
     const content = data.candidates[0].content.parts[0].text;
     console.log('Gemini回應內容長度:', content.length);
@@ -244,7 +244,7 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   }
 }
 
-// Gemini Flash 備用分析函數 
+// Gemini Flash 備用分析函數 - *** 修正 API Key 放置、模型名稱和錯誤處理邏輯 ***
 async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) {
   const prompt = createStructuredPrompt(stockId, stockName, analysisType);
   const MODEL = 'gemini-2.5-flash'; // 使用最新的 Flash 模型別名
@@ -256,12 +256,12 @@ async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) 
   const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
-    // 將 API Key 放入 X-goog-api-key Header
+    // 修正: 將 API Key 放入 X-goog-api-key Header
     const response = await fetch(`${API_ENDPOINT}${MODEL}:generateContent`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-goog-api-key': apiKey // 使用 X-goog-api-key Header 傳遞 Key
+        'X-goog-api-key': apiKey // *** 修正點: 使用 X-goog-api-key Header ***
       },
       body: JSON.stringify({
         contents: [{
@@ -308,12 +308,12 @@ async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) 
 
     const data = await response.json();
     
-    // 增強的錯誤處理邏輯 (檢查內容過濾)
+    // *** 修正: 增強的錯誤處理邏輯（修復連線測試錯誤） ***
     if (!data.candidates || data.candidates.length === 0) {
       let errorMessage = 'Gemini Flash API返回數據格式錯誤：缺少候選回覆 (candidates)。';
       
       if (data.promptFeedback && data.promptFeedback.blockReason) {
-        errorMessage = `Gemini Flash API回覆被阻擋。原因: ${data.promptFeedback.blockReason}。請檢查您的提示內容是否被視為不安全內容(例如金融建議)。`;
+        errorMessage = `Gemini Flash API回覆被阻擋。原因: ${data.promptFeedback.blockReason}。`;
       } else if (data.error && data.error.message) {
          errorMessage = `Gemini Flash API錯誤：${data.error.message}`;
       }
@@ -326,6 +326,7 @@ async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) 
       console.error('Gemini API返回數據格式錯誤:', data);
       throw new Error('Gemini API返回數據格式錯誤：候選回覆結構不完整。');
     }
+    // *** 修正結束 ***
     
     const content = data.candidates[0].content.parts[0].text;
     console.log('Gemini Flash回應內容:', content.substring(0, 500));
@@ -422,7 +423,7 @@ async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
   return parsedResult;
 }
 
-// 創建結構化提示詞 (已修正日期格式為西元年)
+// 創建結構化提示詞 - *** 修正日期格式為西元年 ***
 function createStructuredPrompt(stockId, stockName, analysisType) {
   // *** 修正: 確保使用西元年 YYYY/MM/DD 格式 ***
   const now = new Date();
