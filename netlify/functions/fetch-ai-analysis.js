@@ -39,13 +39,21 @@ exports.handler = async function(event, context) {
       };
     }
 
-    const { stockId, stockName, platform, apiKey, analysisType } = requestBody;
+    const { 
+      stockId, 
+      stockName, 
+      platform, 
+      apiKey, 
+      analysisType,
+      isParallelRequest = false  // 新增：標記是否為並行請求的一部分
+    } = requestBody;
     
     console.log('請求參數:', { 
       stockId, 
       stockName, 
       platform, 
       analysisType, 
+      isParallelRequest,
       apiKeyLength: apiKey ? apiKey.length : 0 
     });
 
@@ -61,19 +69,19 @@ exports.handler = async function(event, context) {
     
     switch (platform) {
       case 'deepseek':
-        analysisResult = await analyzeWithDeepSeek(stockId, stockName, apiKey, analysisType);
+        analysisResult = await analyzeWithDeepSeek(stockId, stockName, apiKey, analysisType, isParallelRequest);
         break;
       case 'gpt':
-        analysisResult = await analyzeWithGPT(stockId, stockName, apiKey, analysisType);
+        analysisResult = await analyzeWithGPT(stockId, stockName, apiKey, analysisType, isParallelRequest);
         break;
       case 'gemini':
-        analysisResult = await analyzeWithGemini(stockId, stockName, apiKey, analysisType);
+        analysisResult = await analyzeWithGemini(stockId, stockName, apiKey, analysisType, isParallelRequest);
         break;
       case 'claude':
-        analysisResult = await analyzeWithClaude(stockId, stockName, apiKey, analysisType);
+        analysisResult = await analyzeWithClaude(stockId, stockName, apiKey, analysisType, isParallelRequest);
         break;
       case 'grok':
-        analysisResult = await analyzeWithGrok(stockId, stockName, apiKey, analysisType);
+        analysisResult = await analyzeWithGrok(stockId, stockName, apiKey, analysisType, isParallelRequest);
         break;
       default:
         return {
@@ -83,14 +91,22 @@ exports.handler = async function(event, context) {
         };
     }
 
-    console.log('分析完成，返回結果');
+    console.log(`✅ ${analysisType}分析完成，返回結果`);
+    
+    // 如果是並行請求，在結果中添加標記
+    const responseData = isParallelRequest ? {
+      ...analysisResult,
+      analysisType: analysisType,
+      isParallelResult: true
+    } : analysisResult;
+
     return {
       statusCode: 200,
       headers: { 
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*'
       },
-      body: JSON.stringify(analysisResult)
+      body: JSON.stringify(responseData)
     };
 
   } catch (error) {
@@ -119,18 +135,24 @@ exports.handler = async function(event, context) {
   }
 };
 
-// DeepSeek 分析函數
-async function analyzeWithDeepSeek(stockId, stockName, apiKey, analysisType) {
+// DeepSeek 分析函數（優化支持並行請求）
+async function analyzeWithDeepSeek(stockId, stockName, apiKey, analysisType, isParallelRequest = false) {
   const prompt = analysisType === 'news' 
     ? createNewsAnalysisPrompt(stockId, stockName)
     : createRiskAnalysisPrompt(stockId, stockName);
 
-  console.log('發送請求到DeepSeek API...');
-  console.log('API Key 前10位:', apiKey.substring(0, 10) + '...');
+  console.log(`發送${analysisType}請求到DeepSeek API...`);
+  console.log('分析類型:', analysisType);
+  console.log('並行請求:', isParallelRequest);
   console.log('提示詞長度:', prompt.length);
 
+  // 根據是否並行請求調整超時時間
+  const timeoutDuration = isParallelRequest ? 45000 : 55000; // 並行時減少超時時間
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超時
+  const timeoutId = setTimeout(() => {
+    console.log(`${analysisType}分析 DeepSeek API 請求超時`);
+    controller.abort();
+  }, timeoutDuration);
 
   try {
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
@@ -148,7 +170,7 @@ async function analyzeWithDeepSeek(stockId, stockName, apiKey, analysisType) {
           }
         ],
         temperature: 0.7,
-        max_tokens: 2000,
+        max_tokens: 1500, // 統一設置為1500 tokens
         stream: false
       }),
       signal: controller.signal
@@ -156,9 +178,8 @@ async function analyzeWithDeepSeek(stockId, stockName, apiKey, analysisType) {
 
     clearTimeout(timeoutId);
 
-    console.log('DeepSeek API 響應狀態:', response.status);
-    console.log('DeepSeek API 響應頭:', JSON.stringify(Object.fromEntries(response.headers)));
-
+    console.log(`${analysisType}分析 DeepSeek API 響應狀態:`, response.status);
+    
     if (!response.ok) {
       let errorText;
       try {
@@ -175,23 +196,20 @@ async function analyzeWithDeepSeek(stockId, stockName, apiKey, analysisType) {
       } else if (response.status === 429) {
         throw new Error('DeepSeek API 請求頻率限制');
       } else if (response.status >= 500) {
-        throw new Error('DeepSeek 服務器內部錯誤: ' + response.status);
+        throw new Error(`DeepSeek 服務器內部錯誤: ${response.status}`);
       } else {
         throw new Error(`DeepSeek API 錯誤 ${response.status}: ${errorText}`);
       }
     }
 
     const data = await response.json();
-    console.log('DeepSeek API 響應接收成功');
-    console.log('響應數據結構:', Object.keys(data));
+    console.log(`${analysisType}分析 DeepSeek API 響應接收成功`);
     
     if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
-      console.log('無效的響應數據:', data);
       throw new Error('DeepSeek API 返回數據格式錯誤: 缺少choices');
     }
     
     if (!data.choices[0].message || !data.choices[0].message.content) {
-      console.log('無效的消息數據:', data.choices[0]);
       throw new Error('DeepSeek API 返回數據格式錯誤: 缺少message content');
     }
     
@@ -200,22 +218,24 @@ async function analyzeWithDeepSeek(stockId, stockName, apiKey, analysisType) {
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error('DeepSeek API 請求超時');
+      throw new Error(`${analysisType}分析 DeepSeek API 請求超時 (${timeoutDuration}毫秒)`);
     }
+    console.error(`${analysisType}分析 DeepSeek 錯誤:`, error.message);
     throw error;
   }
 }
 
 // GPT 分析函數
-async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
+async function analyzeWithGPT(stockId, stockName, apiKey, analysisType, isParallelRequest = false) {
   const prompt = analysisType === 'news' 
     ? createNewsAnalysisPrompt(stockId, stockName)
     : createRiskAnalysisPrompt(stockId, stockName);
 
-  console.log('發送請求到 OpenAI API...');
+  console.log(`發送${analysisType}請求到 OpenAI API...`);
 
+  const timeoutDuration = isParallelRequest ? 45000 : 55000;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -233,7 +253,7 @@ async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
           }
         ],
         temperature: 0.7,
-        max_tokens: 2000,
+        max_tokens: 1500,
         stream: false
       }),
       signal: controller.signal
@@ -247,28 +267,29 @@ async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
     }
 
     const data = await response.json();
-    console.log('OpenAI API 響應接收成功');
+    console.log(`${analysisType}分析 OpenAI API 響應接收成功`);
     return parseAIResponse(data.choices[0].message.content, analysisType, stockName);
     
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error('OpenAI API 請求超時');
+      throw new Error(`${analysisType}分析 OpenAI API 請求超時`);
     }
     throw error;
   }
 }
 
 // Gemini 分析函數
-async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
+async function analyzeWithGemini(stockId, stockName, apiKey, analysisType, isParallelRequest = false) {
   const prompt = analysisType === 'news' 
     ? createNewsAnalysisPrompt(stockId, stockName)
     : createRiskAnalysisPrompt(stockId, stockName);
 
-  console.log('發送請求到 Gemini API...');
+  console.log(`發送${analysisType}請求到 Gemini API...`);
 
+  const timeoutDuration = isParallelRequest ? 45000 : 55000;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
 
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`, {
@@ -284,7 +305,7 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
         }],
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 2000
+          maxOutputTokens: 1500
         }
       }),
       signal: controller.signal
@@ -298,7 +319,7 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
     }
 
     const data = await response.json();
-    console.log('Gemini API 響應接收成功');
+    console.log(`${analysisType}分析 Gemini API 響應接收成功`);
     
     if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
       throw new Error('Gemini API 返回數據格式錯誤');
@@ -310,22 +331,23 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error('Gemini API 請求超時');
+      throw new Error(`${analysisType}分析 Gemini API 請求超時`);
     }
     throw error;
   }
 }
 
 // Claude 分析函數
-async function analyzeWithClaude(stockId, stockName, apiKey, analysisType) {
+async function analyzeWithClaude(stockId, stockName, apiKey, analysisType, isParallelRequest = false) {
   const prompt = analysisType === 'news' 
     ? createNewsAnalysisPrompt(stockId, stockName)
     : createRiskAnalysisPrompt(stockId, stockName);
 
-  console.log('發送請求到 Claude API...');
+  console.log(`發送${analysisType}請求到 Claude API...`);
 
+  const timeoutDuration = isParallelRequest ? 45000 : 55000;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -337,7 +359,7 @@ async function analyzeWithClaude(stockId, stockName, apiKey, analysisType) {
       },
       body: JSON.stringify({
         model: 'claude-3-sonnet-20240229',
-        max_tokens: 2000,
+        max_tokens: 1500,
         temperature: 0.7,
         messages: [{
           role: 'user',
@@ -355,7 +377,7 @@ async function analyzeWithClaude(stockId, stockName, apiKey, analysisType) {
     }
 
     const data = await response.json();
-    console.log('Claude API 響應接收成功');
+    console.log(`${analysisType}分析 Claude API 響應接收成功`);
     
     if (!data.content || !data.content[0] || !data.content[0].text) {
       throw new Error('Claude API 返回數據格式錯誤');
@@ -367,22 +389,23 @@ async function analyzeWithClaude(stockId, stockName, apiKey, analysisType) {
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error('Claude API 請求超時');
+      throw new Error(`${analysisType}分析 Claude API 請求超時`);
     }
     throw error;
   }
 }
 
 // Grok 分析函數
-async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
+async function analyzeWithGrok(stockId, stockName, apiKey, analysisType, isParallelRequest = false) {
   const prompt = analysisType === 'news' 
     ? createNewsAnalysisPrompt(stockId, stockName)
     : createRiskAnalysisPrompt(stockId, stockName);
 
-  console.log('發送請求到 Grok API...');
+  console.log(`發送${analysisType}請求到 Grok API...`);
 
+  const timeoutDuration = isParallelRequest ? 45000 : 55000;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
 
   try {
     const response = await fetch('https://api.x.ai/v1/chat/completions', {
@@ -398,7 +421,7 @@ async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
           content: prompt
         }],
         temperature: 0.7,
-        max_tokens: 2000,
+        max_tokens: 1500,
         stream: false
       }),
       signal: controller.signal
@@ -412,7 +435,7 @@ async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
     }
 
     const data = await response.json();
-    console.log('Grok API 響應接收成功');
+    console.log(`${analysisType}分析 Grok API 響應接收成功`);
     
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
       throw new Error('Grok API 返回數據格式錯誤');
@@ -423,108 +446,79 @@ async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error('Grok API 請求超時');
+      throw new Error(`${analysisType}分析 Grok API 請求超時`);
     }
     throw error;
   }
 }
 
-// 結構化提示詞函數 - 消息面分析
+// 結構化提示詞函數 - 消息面分析（優化版本）
 function createNewsAnalysisPrompt(stockId, stockName) {
   const currentDate = new Date().toLocaleDateString('zh-TW');
-  return `作為專業股票分析師，請分析台灣股票 ${stockId} ${stockName} 在 ${currentDate} 的最新市場消息面。
+  return `作為專業股票分析師，請簡潔分析台灣股票 ${stockId} ${stockName} 的最新市場消息面。
 
-請嚴格按照以下格式提供分析：
+請按以下格式提供分析：
 
 【正面因素】
-1. [具體利多因素1 - 請提供實際數據或事件，包含影響程度]
-2. [具體利多因素2 - 請提供實際數據或事件，包含影響程度] 
-3. [具體利多因素3 - 請提供實際數據或事件，包含影響程度]
+1. [具體利多1，簡要說明]
+2. [具體利多2，簡要說明]
 
 【負面因素】
-1. [具體利空因素1 - 請提供風險分析和影響程度]
-2. [具體利空因素2 - 請提供風險分析和影響程度]
-3. [具體利空因素3 - 請提供風險分析和影響程度]
+1. [具體利空1，簡要說明]
+2. [具體利空2，簡要說明]
 
-【評分項目詳情】
-請為以下項目分配具體分數（每個項目-2到+4分）：
-• 營收成長性：[分數]分 - [理由]
-• 盈利能力：[分數]分 - [理由]
-• 市場地位：[分數]分 - [理由]  
-• 行業前景：[分數]分 - [理由]
-• 新聞影響：[分數]分 - [理由]
-• 技術面：[分數]分 - [理由]
-
-【總分計算】
-請詳細說明每個項目的分數計算過程和總分
+【評分項目】
+• 營收成長性：[分數]分 - [簡要理由]
+• 盈利能力：[分數]分 - [簡要理由]
 
 【最終評分】[必須是-10到+10的整數]
 
-【投資建議】[50字內的具體建議]
+【投資建議】[30字內建議]
 
-請基於最新市場資訊提供真實、客觀的分析。`;
+請基於最新市場資訊提供簡潔、客觀的分析。`;
 }
 
-// 結構化提示詞函數 - 風險面分析
+// 結構化提示詞函數 - 風險面分析（優化版本）
 function createRiskAnalysisPrompt(stockId, stockName) {
   const currentDate = new Date().toLocaleDateString('zh-TW');
-  return `作為專業風險分析師，請分析台灣股票 ${stockId} ${stockName} 在 ${currentDate} 的風險面因素。
+  return `作為風險分析師，請簡潔分析台灣股票 ${stockId} ${stockName} 的風險面因素。
 
-請嚴格按照以下格式提供分析：
+請按以下格式提供分析：
 
-【高風險因素】
-1. [具體高風險1 - 請說明風險程度和影響，包含具體數據]
-2. [具體高風險2 - 請說明風險程度和影響，包含具體數據]
-3. [具體高風險3 - 請說明風險程度和影響，包含具體數據]
+【主要風險】
+1. [高風險1，簡要說明]
+2. [中風險1，簡要說明]
 
-【中風險因素】  
-1. [具體中風險1 - 請說明潛在影響和監控要點]
-2. [具體中風險2 - 請說明潛在影響和監控要點]
+【風險緩衝】
+1. [公司優勢1，簡要說明]
+2. [公司優勢2，簡要說明]
 
-【低風險因素】
-1. [具體低風險1 - 請說明輕微影響和觀察要點]
-2. [具體低風險2 - 請說明輕微影響和觀察要點]
-
-【風險緩衝因素】
-1. [公司優勢1 - 如何抵禦風險，包含具體數據]
-2. [公司優勢2 - 如何抵禦風險，包含具體數據]
-3. [公司優勢3 - 如何抵禦風險，包含具體數據]
-
-【評分項目詳情】
-請為以下項目分配具體分數（負分表示風險，正分表示抵抗力）：
-• 財務風險：[分數]分 - [理由，包含負債比率、流動性等]
-• 市場風險：[分數]分 - [理由，包含市場競爭、客戶集中度等]
-• 營運風險：[分數]分 - [理由，包含供應鏈、技術更新等]
-• 行業風險：[分數]分 - [理由，包含政策變化、行業週期等]
-• 管理風險：[分數]分 - [理由，包含治理結構、管理層變動等]
-• 風險緩衝力：[分數]分 - [理由，包含現金流、競爭優勢等]
-
-【總分計算】
-請詳細說明每個項目的分數計算過程和總分
-（評分標準：-10到+10，-10表示極高風險，+10表示極低風險）
+【評分項目】
+• 財務風險：[分數]分 - [簡要理由]
+• 市場風險：[分數]分 - [簡要理由]
 
 【最終評分】[必須是-10到+10的整數]
 
-【風險建議】[50字內的具體建議]
+【風險建議】[30字內建議]
 
-請提供基於實際情況的客觀風險評估，特別是關注財務槓桿、現金流、行業政策變化等實際指標。`;
+請提供簡潔的風險評估，重點關注財務數據和市場地位。`;
 }
 
 // 解析AI回應函數 - 支持結構化解析
 function parseAIResponse(content, analysisType, stockName = '') {
   try {
-    console.log('解析AI回應，內容長度:', content.length);
+    console.log(`解析${analysisType} AI回應，內容長度:`, content.length);
     
     // 嘗試結構化解析
     let structuredResult = parseStructuredResponse(content, analysisType, stockName);
     
     if (structuredResult.structured) {
-      console.log('✅ 成功解析結構化回應');
+      console.log(`✅ 成功解析${analysisType}結構化回應`);
       return structuredResult;
     }
     
-    // 如果結構化解析失敗，使用原有的簡單解析
-    console.log('⚠️ 結構化解析失敗，使用簡單解析');
+    // 如果結構化解析失敗，使用簡單解析
+    console.log(`⚠️ ${analysisType}結構化解析失敗，使用簡單解析`);
     let score = 0;
     const scoreMatch = content.match(/最終評分:\s*([+-]?\d+)/) || 
                      content.match(/評分:\s*([+-]?\d+)/) ||
@@ -558,7 +552,7 @@ function parseAIResponse(content, analysisType, stockName = '') {
     };
     
   } catch (error) {
-    console.error('解析AI回應錯誤:', error);
+    console.error(`解析${analysisType} AI回應錯誤:`, error);
     return {
       success: true,
       content: content,
@@ -573,7 +567,7 @@ function parseAIResponse(content, analysisType, stockName = '') {
 // 結構化解析函數
 function parseStructuredResponse(content, analysisType, stockName = '') {
   try {
-    console.log('開始解析結構化回應...');
+    console.log(`開始解析${analysisType}結構化回應...`);
     
     let score = 0;
     let positives = [];
@@ -585,7 +579,7 @@ function parseStructuredResponse(content, analysisType, stockName = '') {
     const finalScoreMatch = content.match(/【最終評分】\s*[\[\]（）()]*\s*([+-]?\d+)/);
     if (finalScoreMatch) {
       score = parseInt(finalScoreMatch[1]);
-      console.log('找到最終評分:', score);
+      console.log(`找到${analysisType}最終評分:`, score);
     }
 
     if (analysisType === 'news') {
@@ -594,46 +588,35 @@ function parseStructuredResponse(content, analysisType, stockName = '') {
       if (positivesMatch) {
         const positivesText = positivesMatch[1];
         positives = extractNumberedItems(positivesText);
-        console.log('提取正面因素:', positives.length);
+        console.log(`提取${analysisType}正面因素:`, positives.length);
       }
 
       // 提取負面因素
-      const negativesMatch = content.match(/【負面因素】([\s\S]*?)【評分項目詳情】/);
+      const negativesMatch = content.match(/【負面因素】([\s\S]*?)【評分項目/);
       if (negativesMatch) {
         const negativesText = negativesMatch[1];
         negatives = extractNumberedItems(negativesText);
-        console.log('提取負面因素:', negatives.length);
+        console.log(`提取${analysisType}負面因素:`, negatives.length);
       }
     } else {
-      // 風險分析：重新組織數據
-      const risksMatch = content.match(/【高風險因素】([\s\S]*?)【中風險因素】/);
+      // 風險分析
+      const risksMatch = content.match(/【主要風險】([\s\S]*?)【風險緩衝】/);
       if (risksMatch) {
         const risksText = risksMatch[1];
-        // 高風險作為負面因素（扣分）
-        const highRisks = extractNumberedItems(risksText);
-        negatives = highRisks;
-        console.log('提取高風險因素:', highRisks.length);
+        negatives = extractNumberedItems(risksText);
+        console.log(`提取${analysisType}風險因素:`, negatives.length);
       }
 
-      const mediumRisksMatch = content.match(/【中風險因素】([\s\S]*?)【低風險因素】/);
-      if (mediumRisksMatch) {
-        const mediumRisksText = mediumRisksMatch[1];
-        const mediumRisks = extractNumberedItems(mediumRisksText);
-        // 中風險添加到負面因素
-        negatives = [...negatives, ...mediumRisks];
-        console.log('提取中風險因素:', mediumRisks.length);
-      }
-
-      const buffersMatch = content.match(/【風險緩衝因素】([\s\S]*?)【評分項目詳情】/);
+      const buffersMatch = content.match(/【風險緩衝】([\s\S]*?)【評分項目/);
       if (buffersMatch) {
         const buffersText = buffersMatch[1];
         positives = extractNumberedItems(buffersText);
-        console.log('提取緩衝因素:', positives.length);
+        console.log(`提取${analysisType}緩衝因素:`, positives.length);
       }
     }
 
     // 提取評分項目詳情
-    const scoreDetailsMatch = content.match(/【評分項目詳情】([\s\S]*?)【總分計算】/);
+    const scoreDetailsMatch = content.match(/【評分項目】([\s\S]*?)【最終評分】/);
     if (scoreDetailsMatch) {
       const detailsText = scoreDetailsMatch[1];
       scoreDetails = detailsText.split('\n').filter(line => 
@@ -649,7 +632,7 @@ function parseStructuredResponse(content, analysisType, stockName = '') {
         }
         return null;
       }).filter(item => item !== null);
-      console.log('提取評分項目:', scoreDetails.length);
+      console.log(`提取${analysisType}評分項目:`, scoreDetails.length);
     }
 
     // 提取建議
@@ -660,7 +643,7 @@ function parseStructuredResponse(content, analysisType, stockName = '') {
 
     // 如果沒有找到結構化內容，使用備用解析
     if (positives.length === 0 && negatives.length === 0) {
-      console.log('未找到結構化內容，使用備用解析');
+      console.log(`未找到${analysisType}結構化內容，使用備用解析`);
       return parseFallbackResponse(content, analysisType, stockName, score);
     }
 
@@ -690,7 +673,7 @@ function parseStructuredResponse(content, analysisType, stockName = '') {
     };
 
   } catch (error) {
-    console.error('解析結構化回應錯誤:', error);
+    console.error(`解析${analysisType}結構化回應錯誤:`, error);
     return {
       success: true,
       content: content,
@@ -723,12 +706,12 @@ function parseFallbackResponse(content, analysisType, stockName, score) {
       const lowerLine = line.toLowerCase();
       if (lowerLine.includes('正面') || lowerLine.includes('利好') || lowerLine.includes('優勢') || 
           lowerLine.includes('機會') || lowerLine.includes('成長')) {
-        if (line.length > 10 && !line.match(/^(正面|利好|優勢|機會|成長)/)) {
+        if (line.length > 8 && !line.match(/^(正面|利好|優勢|機會|成長)/)) {
           positives.push(line);
         }
       } else if (lowerLine.includes('負面') || lowerLine.includes('風險') || lowerLine.includes('挑戰') || 
                 lowerLine.includes('問題') || lowerLine.includes('不利')) {
-        if (line.length > 10 && !line.match(/^(負面|風險|挑戰|問題|不利)/)) {
+        if (line.length > 8 && !line.match(/^(負面|風險|挑戰|問題|不利)/)) {
           negatives.push(line);
         }
       } else if (lowerLine.includes('建議') || lowerLine.includes('推薦') || lowerLine.includes('結論')) {
@@ -738,10 +721,10 @@ function parseFallbackResponse(content, analysisType, stockName, score) {
     
     // 如果沒有找到足夠的因素，使用默認值
     if (positives.length === 0) {
-      positives = ['營收表現穩健', '市場地位穩固', '技術優勢明顯'];
+      positives = ['營收表現穩健', '市場地位穩固'];
     }
     if (negatives.length === 0) {
-      negatives = ['行業競爭加劇', '成本壓力上升', '市場需求波動'];
+      negatives = ['行業競爭加劇', '成本壓力上升'];
     }
   } else {
     // 風險面：不同的關鍵詞匹配
@@ -749,12 +732,12 @@ function parseFallbackResponse(content, analysisType, stockName, score) {
       const lowerLine = line.toLowerCase();
       if (lowerLine.includes('風險') || lowerLine.includes('問題') || lowerLine.includes('挑戰') || 
           lowerLine.includes('威脅') || lowerLine.includes('不利') || lowerLine.includes('下跌')) {
-        if (line.length > 10) {
+        if (line.length > 8) {
           negatives.push(line);
         }
       } else if (lowerLine.includes('優勢') || lowerLine.includes('緩衝') || lowerLine.includes('保護') || 
                 lowerLine.includes('防禦') || lowerLine.includes('競爭力') || lowerLine.includes('穩健')) {
-        if (line.length > 10) {
+        if (line.length > 8) {
           positives.push(line);
         }
       } else if (lowerLine.includes('建議') || lowerLine.includes('推薦') || lowerLine.includes('策略')) {
@@ -764,10 +747,10 @@ function parseFallbackResponse(content, analysisType, stockName, score) {
     
     // 如果沒有找到足夠的因素，使用默認值
     if (negatives.length === 0) {
-      negatives = ['財務槓桿過高', '行業競爭激烈', '政策變化風險'];
+      negatives = ['財務槓桿過高', '行業競爭激烈'];
     }
     if (positives.length === 0) {
-      positives = ['現金流充足', '技術領先地位', '多元化客戶基礎'];
+      positives = ['現金流充足', '技術領先地位'];
     }
   }
   
@@ -784,8 +767,8 @@ function parseFallbackResponse(content, analysisType, stockName, score) {
     comment: recommendation || '基於綜合分析給出的建議',
     analysisType: analysisType,
     structured: false,
-    positives: positives.slice(0, 3),
-    negatives: negatives.slice(0, 3),
+    positives: positives.slice(0, 2),
+    negatives: negatives.slice(0, 2),
     scoreDetails: scoreDetails
   };
 }
@@ -796,11 +779,11 @@ function generateScoreDetails(positives, negatives, totalScore, analysisType) {
   
   if (analysisType === 'news') {
     // 消息面評分分配
-    const positiveScores = [3, 2, 1];
-    const negativeScores = [-2, -1, -1];
+    const positiveScores = [2, 1];
+    const negativeScores = [-1, -1];
     
     positives.forEach((positive, index) => {
-      if (index < 3) {
+      if (index < 2) {
         details.push({
           item: `正面因素 ${index + 1}`,
           score: positiveScores[index] || 1,
@@ -820,11 +803,11 @@ function generateScoreDetails(positives, negatives, totalScore, analysisType) {
     });
   } else {
     // 風險面評分分配
-    const riskScores = [-3, -2, -1];
-    const bufferScores = [2, 1, 1];
+    const riskScores = [-2, -1];
+    const bufferScores = [2, 1];
     
     negatives.forEach((risk, index) => {
-      if (index < 3) {
+      if (index < 2) {
         details.push({
           item: `風險因素 ${index + 1}`,
           score: riskScores[index] || -1,
