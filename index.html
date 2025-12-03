@@ -113,11 +113,12 @@
     </div>
 
 <!-- AI 分析功能區域 -->
+<!-- 修改 AI 分析功能區域 -->
 <div class="row justify-content-center mb-4">
     <div class="col-md-12">
         <div class="card text-dark">
             <div class="card-header bg-info text-white">
-                <strong>🔍 消息面與風險分析AI助手</strong>
+                <strong>🔍 AI 股票分析助手</strong>
             </div>
             <div class="card-body">
                 <div class="row g-3 align-items-center">
@@ -144,12 +145,15 @@
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">分析類型</label>
-                        <div class="btn-group w-100" role="group">
-                            <input type="radio" class="btn-check" name="analysisType" id="newsAnalysis" value="news" checked>
-                            <label class="btn btn-outline-success" for="newsAnalysis">📰 消息面分析</label>
-                            
-                            <input type="radio" class="btn-check" name="analysisType" id="riskAnalysis" value="risk">
-                            <label class="btn btn-outline-warning" for="riskAnalysis">⚠️ 風險面分析</label>
+                        <div class="d-flex flex-column">
+                            <div class="btn-group w-100 mb-2" role="group">
+                                <input type="radio" class="btn-check" name="analysisType" id="newsAnalysis" value="news" checked>
+                                <label class="btn btn-outline-danger" for="newsAnalysis">📰 消息面分析 (紅+黑-)</label>
+                            </div>
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="analysisType" id="riskAnalysis" value="risk">
+                                <label class="btn btn-outline-warning" for="riskAnalysis">⚠️ 風險面分析</label>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -198,7 +202,7 @@
                                     <div class="card">
                                         <div class="card-body text-center">
                                             <h5>AI 分析評分</h5>
-                                            <div id="aiScoreDisplay" class="fs-1 fw-bold text-primary">0</div>
+                                            <div id="aiScoreDisplay" class="fs-1 fw-bold">0</div>
                                             <div id="aiComment" class="text-muted mt-2"></div>
                                         </div>
                                     </div>
@@ -225,8 +229,8 @@
                         <div class="tab-pane fade" id="score-details" role="tabpanel">
                             <!-- 消息面評分表格 -->
                             <div id="newsScoreTable" class="card mb-4" style="display: none;">
-                                <div class="card-header bg-success text-white">
-                                    <strong>📰 消息面評分明細</strong>
+                                <div class="card-header bg-danger text-white">
+                                    <strong>📰 消息面評分明細 (紅+黑-)</strong>
                                 </div>
                                 <div class="card-body">
                                     <table class="table table-striped">
@@ -685,8 +689,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // AI分析按鈕 - 使用結構化分析
- // 替換原有的 AI 分析按鈕事件
+// AI分析按鈕 - 使用結構化分析
 document.getElementById('aiAnalyzeBtn').addEventListener('click', async function() {
     const symbol = document.getElementById('stockSelect').value.trim();
     if (!symbol) {
@@ -717,13 +720,14 @@ document.getElementById('aiAnalyzeBtn').addEventListener('click', async function
     analyzeBtn.disabled = true;
     spinner.style.display = 'inline-block';
     
+    // 顯示當前使用的平台
     document.getElementById('aiKeyStatus').innerHTML = 
         `<span class="badge bg-info">🔄 ${currentAiPlatform} 分析中... (約20秒)</span>`;
     
     try {
         log(`開始 ${analysisType === 'news' ? '消息面' : '風險面'} AI 分析: ${symbol} ${stockName}, 平台: ${currentAiPlatform}`);
         
-        // 使用統一的 AI 分析函數
+        // 使用結構化分析函數
         const response = await fetch('/.netlify/functions/fetch-ai-analysis', {
             method: 'POST',
             headers: {
@@ -749,28 +753,24 @@ document.getElementById('aiAnalyzeBtn').addEventListener('click', async function
             throw new Error(result.error);
         }
 
-        // 顯示結果
+        // 顯示結構化結果
         document.getElementById('aiAnalysisContent').textContent = result.content;
-        document.getElementById('aiScoreDisplay').textContent = 
-            result.score > 0 ? `+${result.score}` : result.score;
-        document.getElementById('aiComment').textContent = result.comment;
         
-        // 更新評分顯示
-        const scoreDisplay = document.getElementById('aiScoreDisplay');
-        scoreDisplay.className = 'fs-1 fw-bold ' + 
-            (result.score > 0 ? 'text-success' : 
-             result.score < 0 ? 'text-danger' : 'text-warning');
+        // 使用新的評分顯示函數（替換原有的評分顯示邏輯）
+        updateAiScoreDisplay(result.score, analysisType);
+        
+        // 原有的評分顯示邏輯應該刪除或註釋掉：
+        // document.getElementById('aiScoreDisplay').textContent = 
+        //     result.score > 0 ? `+${result.score}` : result.score;
+        // document.getElementById('aiComment').textContent = result.comment;
+        
+        // 更新評分顯示（使用新的函數）
+        document.getElementById('aiComment').textContent = result.comment;
         
         document.getElementById('aiAnalysisResult').style.display = 'block';
         
-        // 顯示評分明細（如果支持結構化）
-        if (result.structured) {
-            displayScoreDetails(analysisType, result.rawContent || result.content, result.score, stockName);
-        } else {
-            // 隱藏評分明細表格
-            document.getElementById('newsScoreTable').style.display = 'none';
-            document.getElementById('riskScoreTable').style.display = 'none';
-        }
+        // 顯示評分明細
+        displayScoreDetails(analysisType, result.rawContent || result.content, result.score, stockName);
         
         // 保存分析歷史
         saveAnalysisHistory(analysisType, result, stockName);
@@ -842,7 +842,24 @@ document.getElementById('aiAnalyzeBtn').addEventListener('click', async function
         log(`✅ AI ${analysisType === 'news' ? '消息面' : '風險面'}評分 ${score} 已應用到系統 (加權: ${weightedScore})`);
         alert(`AI 評分已成功應用到${analysisType === 'news' ? '消息面' : '風險面'}！`);
     }
-
+// ================= 更新 AI 評分顯示顏色 =================
+function updateAiScoreDisplay(score, analysisType) {
+    const scoreDisplay = document.getElementById('aiScoreDisplay');
+    const scoreValue = score > 0 ? `+${score}` : score;
+    
+    if (analysisType === 'news') {
+        // 消息面：+分紅色，-分黑色
+        scoreDisplay.className = 'fs-1 fw-bold ' + 
+            (score > 0 ? 'text-danger' : 'text-dark');
+    } else {
+        // 風險面：保持原有顏色邏輯
+        scoreDisplay.className = 'fs-1 fw-bold ' + 
+            (score > 0 ? 'text-success' : 
+             score < 0 ? 'text-danger' : 'text-warning');
+    }
+    
+    scoreDisplay.textContent = scoreValue;
+}
     // ================= 分析類型切換監聽 =================
     document.querySelectorAll('input[name="analysisType"]').forEach(radio => {
         radio.addEventListener('change', function() {
