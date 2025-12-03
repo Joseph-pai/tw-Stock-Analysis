@@ -135,121 +135,179 @@ async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
   return parsedResult;
 }
 
-// Gemini 結構化分析 - 修復版本
+// Gemini 結構化分析 - 已修正 (使用 gemini-2.5-pro 和 v1 穩定版)
 async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   const prompt = createStructuredPrompt(stockId, stockName, analysisType);
+  const MODEL = 'gemini-2.5-pro'; // 修正: 使用最新的 Pro 模型別名
+  const API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1/models/'; // 修正: 使用 v1 穩定版 API
 
-  console.log('發送結構化請求到Gemini API...');
+  console.log(`發送結構化請求到Gemini API (${MODEL})...`);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超時
 
   try {
-    // 嘗試多個可能的模型名稱
-    const modelsToTry = [
-      'gemini-1.5-pro',      // 新版本
-      'gemini-1.5-flash',    // 快速版本
-      'gemini-pro',          // 原始版本
-      'models/gemini-pro'    // 完整路徑
-    ];
-
-    let lastError = null;
-    
-    for (const model of modelsToTry) {
-      try {
-        console.log(`嘗試 Gemini 模型: ${model}`);
-        
-        // 構建API端點
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${apiKey}`;
-        
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
+    // 修正: 將 API Key 放入 Authorization Header，並使用 v1 穩定版端點
+    const response = await fetch(`${API_ENDPOINT}${MODEL}:generateContent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}` // 修正: 透過 Header 傳遞 Key
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 2000,
+          topP: 0.8,
+          topK: 40
+        },
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_NONE"
           },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: prompt
-              }]
-            }],
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 2000,
-              topP: 0.8,
-              topK: 40
-            }
-          }),
-          signal: controller.signal
-        });
-
-        console.log(`Gemini API (${model}) 響應狀態:`, response.status);
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.log(`Gemini API (${model}) 錯誤:`, errorData);
-          
-          if (response.status !== 404) {
-            // 如果不是404錯誤，直接拋出
-            throw new Error(`Gemini API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
+          {
+            category: "HARM_CATEGORY_HATE_SPEECH",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_NONE"
           }
-          
-          // 如果是404錯誤，記錄並嘗試下一個模型
-          lastError = errorData;
-          continue;
-        }
+        ]
+      }),
+      signal: controller.signal
+    });
 
-        const data = await response.json();
-        console.log(`Gemini API (${model}) 響應數據結構:`, Object.keys(data));
-        
-        if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
-          console.error('Gemini API返回數據格式錯誤:', data);
-          throw new Error('Gemini API返回數據格式錯誤：缺少必要字段');
-        }
-        
-        const content = data.candidates[0].content.parts[0].text;
-        console.log('Gemini回應內容長度:', content.length);
-        console.log('Gemini回應內容:', content.substring(0, 500));
+    clearTimeout(timeoutId);
 
-        const parsedResult = parseStructuredResponse(content, analysisType, stockName);
-        
-        // 清空超時並返回成功結果
-        clearTimeout(timeoutId);
-        return parsedResult;
-        
-      } catch (modelError) {
-        console.log(`模型 ${model} 失敗:`, modelError.message);
-        lastError = modelError;
-        // 繼續嘗試下一個模型
-        continue;
+    console.log('Gemini API響應狀態:', response.status);
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Gemini API錯誤詳情:', errorData);
+      
+      // 修正: 如果 Pro 模型失敗，嘗試降級到 Flash 模型
+      if (response.status === 404 || response.status === 400) {
+        console.log(`${MODEL} 模型錯誤，嘗試降級到 Flash 模型...`);
+        return await analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType);
       }
+      
+      throw new Error(`Gemini API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
     }
 
-    // 所有模型都失敗了
-    throw new Error(`所有Gemini模型嘗試失敗。最後錯誤: ${lastError ? lastError.message : '未知錯誤'}`);
+    const data = await response.json();
+    console.log('Gemini API響應數據結構:', Object.keys(data));
+    
+    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
+      console.error('Gemini API返回數據格式錯誤:', data);
+      throw new Error('Gemini API返回數據格式錯誤：缺少必要字段');
+    }
+    
+    const content = data.candidates[0].content.parts[0].text;
+    console.log('Gemini回應內容長度:', content.length);
+    console.log('Gemini回應內容:', content.substring(0, 500));
 
+    const parsedResult = parseStructuredResponse(content, analysisType, stockName);
+    return parsedResult;
+    
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
       throw new Error('Gemini API請求超時');
     }
+    throw error;
+  }
+}
+
+// Gemini Flash 備用分析函數 - 已修正 (使用 gemini-2.5-flash 和 v1 穩定版)
+async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) {
+  const prompt = createStructuredPrompt(stockId, stockName, analysisType);
+  const MODEL = 'gemini-2.5-flash'; // 修正: 使用最新的 Flash 模型別名
+  const API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1/models/'; // 修正: 使用 v1 穩定版 API
+
+  console.log(`發送結構化請求到Gemini Flash API (${MODEL})...`);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    // 修正: 將 API Key 放入 Authorization Header，並使用 v1 穩定版端點
+    const response = await fetch(`${API_ENDPOINT}${MODEL}:generateContent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}` // 修正: 透過 Header 傳遞 Key
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 2000,
+          topP: 0.8,
+          topK: 40
+        },
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_HATE_SPEECH",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_NONE"
+          }
+        ]
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    console.log('Gemini Flash API響應狀態:', response.status);
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Gemini Flash API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+
+    const data = await response.json();
     
-    // 如果所有嘗試都失敗，提供用戶可用的模型列表
-    console.log('嘗試獲取可用的Gemini模型列表...');
-    try {
-      const modelsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
-        signal: controller.signal
-      });
-      
-      if (modelsResponse.ok) {
-        const modelsData = await modelsResponse.json();
-        const availableModels = modelsData.models ? modelsData.models.map(m => m.name).join(', ') : '無法獲取模型列表';
-        throw new Error(`Gemini API連接失敗。可用模型: ${availableModels}\n原始錯誤: ${error.message}`);
-      }
-    } catch (modelsError) {
-      console.log('獲取模型列表失敗:', modelsError.message);
+    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
+      throw new Error('Gemini Flash API返回數據格式錯誤');
     }
     
+    const content = data.candidates[0].content.parts[0].text;
+    console.log('Gemini Flash回應內容:', content.substring(0, 500));
+
+    const parsedResult = parseStructuredResponse(content, analysisType, stockName);
+    return parsedResult;
+    
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Gemini Flash API請求超時');
+    }
     throw error;
   }
 }
