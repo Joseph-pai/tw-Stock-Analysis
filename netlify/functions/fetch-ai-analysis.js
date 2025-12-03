@@ -429,7 +429,7 @@ async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
   }
 }
 
-// 結構化提示詞函數
+// 結構化提示詞函數 - 消息面分析
 function createNewsAnalysisPrompt(stockId, stockName) {
   const currentDate = new Date().toLocaleDateString('zh-TW');
   return `作為專業股票分析師，請分析台灣股票 ${stockId} ${stockName} 在 ${currentDate} 的最新市場消息面。
@@ -465,6 +465,7 @@ function createNewsAnalysisPrompt(stockId, stockName) {
 請基於最新市場資訊提供真實、客觀的分析。`;
 }
 
+// 結構化提示詞函數 - 風險面分析
 function createRiskAnalysisPrompt(stockId, stockName) {
   const currentDate = new Date().toLocaleDateString('zh-TW');
   return `作為專業風險分析師，請分析台灣股票 ${stockId} ${stockName} 在 ${currentDate} 的風險面因素。
@@ -474,32 +475,39 @@ function createRiskAnalysisPrompt(stockId, stockName) {
 【高風險因素】
 1. [具體高風險1 - 請說明風險程度和影響，包含具體數據]
 2. [具體高風險2 - 請說明風險程度和影響，包含具體數據]
+3. [具體高風險3 - 請說明風險程度和影響，包含具體數據]
 
 【中風險因素】  
 1. [具體中風險1 - 請說明潛在影響和監控要點]
 2. [具體中風險2 - 請說明潛在影響和監控要點]
 
+【低風險因素】
+1. [具體低風險1 - 請說明輕微影響和觀察要點]
+2. [具體低風險2 - 請說明輕微影響和觀察要點]
+
 【風險緩衝因素】
 1. [公司優勢1 - 如何抵禦風險，包含具體數據]
 2. [公司優勢2 - 如何抵禦風險，包含具體數據]
+3. [公司優勢3 - 如何抵禦風險，包含具體數據]
 
 【評分項目詳情】
 請為以下項目分配具體分數（負分表示風險，正分表示抵抗力）：
-• 財務風險：[分數]分 - [理由]
-• 市場風險：[分數]分 - [理由]
-• 營運風險：[分數]分 - [理由]
-• 行業風險：[分數]分 - [理由]
-• 管理風險：[分數]分 - [理由]
-• 風險緩衝：[分數]分 - [理由]
+• 財務風險：[分數]分 - [理由，包含負債比率、流動性等]
+• 市場風險：[分數]分 - [理由，包含市場競爭、客戶集中度等]
+• 營運風險：[分數]分 - [理由，包含供應鏈、技術更新等]
+• 行業風險：[分數]分 - [理由，包含政策變化、行業週期等]
+• 管理風險：[分數]分 - [理由，包含治理結構、管理層變動等]
+• 風險緩衝力：[分數]分 - [理由，包含現金流、競爭優勢等]
 
 【總分計算】
 請詳細說明每個項目的分數計算過程和總分
+（評分標準：-10到+10，-10表示極高風險，+10表示極低風險）
 
 【最終評分】[必須是-10到+10的整數]
 
 【風險建議】[50字內的具體建議]
 
-請提供基於實際情況的客觀風險評估。`;
+請提供基於實際情況的客觀風險評估，特別是關注財務槓桿、現金流、行業政策變化等實際指標。`;
 }
 
 // 解析AI回應函數 - 支持結構化解析
@@ -597,20 +605,30 @@ function parseStructuredResponse(content, analysisType, stockName = '') {
         console.log('提取負面因素:', negatives.length);
       }
     } else {
-      // 提取風險因素
+      // 風險分析：重新組織數據
       const risksMatch = content.match(/【高風險因素】([\s\S]*?)【中風險因素】/);
       if (risksMatch) {
         const risksText = risksMatch[1];
-        positives = extractNumberedItems(risksText);
-        console.log('提取風險因素:', positives.length);
+        // 高風險作為負面因素（扣分）
+        const highRisks = extractNumberedItems(risksText);
+        negatives = highRisks;
+        console.log('提取高風險因素:', highRisks.length);
       }
 
-      // 提取緩衝因素
+      const mediumRisksMatch = content.match(/【中風險因素】([\s\S]*?)【低風險因素】/);
+      if (mediumRisksMatch) {
+        const mediumRisksText = mediumRisksMatch[1];
+        const mediumRisks = extractNumberedItems(mediumRisksText);
+        // 中風險添加到負面因素
+        negatives = [...negatives, ...mediumRisks];
+        console.log('提取中風險因素:', mediumRisks.length);
+      }
+
       const buffersMatch = content.match(/【風險緩衝因素】([\s\S]*?)【評分項目詳情】/);
       if (buffersMatch) {
         const buffersText = buffersMatch[1];
-        negatives = extractNumberedItems(buffersText);
-        console.log('提取緩衝因素:', negatives.length);
+        positives = extractNumberedItems(buffersText);
+        console.log('提取緩衝因素:', positives.length);
       }
     }
 
@@ -699,30 +717,58 @@ function parseFallbackResponse(content, analysisType, stockName, score) {
   let negatives = [];
   let recommendation = '';
   
-  // 簡單的關鍵詞匹配
-  lines.forEach(line => {
-    const lowerLine = line.toLowerCase();
-    if (lowerLine.includes('正面') || lowerLine.includes('利好') || lowerLine.includes('優勢') || 
-        lowerLine.includes('機會') || lowerLine.includes('成長')) {
-      if (line.length > 10 && !line.match(/^(正面|利好|優勢|機會|成長)/)) {
-        positives.push(line);
+  if (analysisType === 'news') {
+    // 消息面：簡單的關鍵詞匹配
+    lines.forEach(line => {
+      const lowerLine = line.toLowerCase();
+      if (lowerLine.includes('正面') || lowerLine.includes('利好') || lowerLine.includes('優勢') || 
+          lowerLine.includes('機會') || lowerLine.includes('成長')) {
+        if (line.length > 10 && !line.match(/^(正面|利好|優勢|機會|成長)/)) {
+          positives.push(line);
+        }
+      } else if (lowerLine.includes('負面') || lowerLine.includes('風險') || lowerLine.includes('挑戰') || 
+                lowerLine.includes('問題') || lowerLine.includes('不利')) {
+        if (line.length > 10 && !line.match(/^(負面|風險|挑戰|問題|不利)/)) {
+          negatives.push(line);
+        }
+      } else if (lowerLine.includes('建議') || lowerLine.includes('推薦') || lowerLine.includes('結論')) {
+        recommendation = line;
       }
-    } else if (lowerLine.includes('負面') || lowerLine.includes('風險') || lowerLine.includes('挑戰') || 
-               lowerLine.includes('問題') || lowerLine.includes('不利')) {
-      if (line.length > 10 && !line.match(/^(負面|風險|挑戰|問題|不利)/)) {
-        negatives.push(line);
-      }
-    } else if (lowerLine.includes('建議') || lowerLine.includes('推薦') || lowerLine.includes('結論')) {
-      recommendation = line;
+    });
+    
+    // 如果沒有找到足夠的因素，使用默認值
+    if (positives.length === 0) {
+      positives = ['營收表現穩健', '市場地位穩固', '技術優勢明顯'];
     }
-  });
-  
-  // 如果沒有找到足夠的因素，使用默認值
-  if (positives.length === 0) {
-    positives = ['營收表現穩健', '市場地位穩固', '技術優勢明顯'];
-  }
-  if (negatives.length === 0) {
-    negatives = ['行業競爭加劇', '成本壓力上升', '市場需求波動'];
+    if (negatives.length === 0) {
+      negatives = ['行業競爭加劇', '成本壓力上升', '市場需求波動'];
+    }
+  } else {
+    // 風險面：不同的關鍵詞匹配
+    lines.forEach(line => {
+      const lowerLine = line.toLowerCase();
+      if (lowerLine.includes('風險') || lowerLine.includes('問題') || lowerLine.includes('挑戰') || 
+          lowerLine.includes('威脅') || lowerLine.includes('不利') || lowerLine.includes('下跌')) {
+        if (line.length > 10) {
+          negatives.push(line);
+        }
+      } else if (lowerLine.includes('優勢') || lowerLine.includes('緩衝') || lowerLine.includes('保護') || 
+                lowerLine.includes('防禦') || lowerLine.includes('競爭力') || lowerLine.includes('穩健')) {
+        if (line.length > 10) {
+          positives.push(line);
+        }
+      } else if (lowerLine.includes('建議') || lowerLine.includes('推薦') || lowerLine.includes('策略')) {
+        recommendation = line;
+      }
+    });
+    
+    // 如果沒有找到足夠的因素，使用默認值
+    if (negatives.length === 0) {
+      negatives = ['財務槓桿過高', '行業競爭激烈', '政策變化風險'];
+    }
+    if (positives.length === 0) {
+      positives = ['現金流充足', '技術領先地位', '多元化客戶基礎'];
+    }
   }
   
   const scoreDetails = generateScoreDetails(positives, negatives, score, analysisType);
@@ -777,7 +823,7 @@ function generateScoreDetails(positives, negatives, totalScore, analysisType) {
     const riskScores = [-3, -2, -1];
     const bufferScores = [2, 1, 1];
     
-    positives.forEach((risk, index) => {
+    negatives.forEach((risk, index) => {
       if (index < 3) {
         details.push({
           item: `風險因素 ${index + 1}`,
@@ -787,7 +833,7 @@ function generateScoreDetails(positives, negatives, totalScore, analysisType) {
       }
     });
     
-    negatives.forEach((buffer, index) => {
+    positives.forEach((buffer, index) => {
       if (index < 2) {
         details.push({
           item: `風險緩衝 ${index + 1}`,
@@ -817,7 +863,10 @@ function formatAnalysisContent(positives, negatives, scoreDetails, summary, reco
   let formatted = '';
   
   if (analysisType === 'news') {
-    formatted += `📊 ${score > 0 ? '🟢' : score < 0 ? '🔴' : '🟡'} ${stockName} 消息面分析評分: ${score > 0 ? '+' : ''}${score}/10\n\n`;
+    // 消息面評分顏色，+分為紅色，-分為黑色
+    const scoreColor = score > 0 ? '🔴' : '⚫';
+    const scoreText = score > 0 ? `+${score}` : score;
+    formatted += `📊 ${scoreColor} ${stockName} 消息面分析評分: ${scoreText}/10\n\n`;
     
     formatted += `🌟 正面因素 (利多):\n`;
     positives.forEach((item, index) => {
@@ -830,15 +879,18 @@ function formatAnalysisContent(positives, negatives, scoreDetails, summary, reco
     });
     
   } else {
-    formatted += `📊 ${score > 0 ? '🟢' : score < 0 ? '🔴' : '🟡'} ${stockName} 風險面分析評分: ${score > 0 ? '+' : ''}${score}/10\n\n`;
+    // 風險面保持原有顏色邏輯
+    const scoreColor = score > 0 ? '🟢' : score < 0 ? '🔴' : '🟡';
+    const scoreText = score > 0 ? `+${score}` : score;
+    formatted += `📊 ${scoreColor} ${stockName} 風險面分析評分: ${scoreText}/10\n\n`;
     
     formatted += `🔴 風險因素:\n`;
-    positives.forEach((item, index) => {
+    negatives.forEach((item, index) => {
       formatted += `${index + 1}. ${item}\n`;
     });
     
     formatted += `\n🛡️ 風險緩衝因素:\n`;
-    negatives.forEach((item, index) => {
+    positives.forEach((item, index) => {
       formatted += `${index + 1}. ${item}\n`;
     });
   }
