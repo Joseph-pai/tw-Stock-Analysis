@@ -135,11 +135,11 @@ async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
   return parsedResult;
 }
 
-// Gemini 結構化分析 - *** 修正 API Key 傳輸方式為 URL 參數 ***
+// Gemini 結構化分析 - *** 最終修正: 使用 v1beta 和 gemini-pro ***
 async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   const prompt = createStructuredPrompt(stockId, stockName, analysisType);
-  const MODEL = 'gemini-2.5-pro'; // 使用最新的 Pro 模型別名
-  const API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1/models/'; // 使用 v1 穩定版 API
+  const MODEL = 'gemini-pro'; // 降級到更通用的 Pro 模型名稱
+  const API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/'; // 降級到 v1beta 端點
 
   console.log(`發送結構化請求到Gemini API (${MODEL})...`);
 
@@ -147,12 +147,11 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超時
 
   try {
-    // *** 修正點: 將 API Key 放入 URL 查詢參數 ***
+    // 保持 API Key 在 URL 查詢參數
     const response = await fetch(`${API_ENDPOINT}${MODEL}:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // 'X-goog-api-key': apiKey // 移除 Header 傳輸方式
       },
       body: JSON.stringify({
         contents: [{
@@ -224,7 +223,6 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
     
     // 專門處理 '候選回覆結構不完整' 的情況
     if (!data.candidates[0].content || !data.candidates[0].content.parts) {
-      // 在此處檢查是否有 finishReason 表明內容被過濾
       if (data.candidates[0].finishReason && data.candidates[0].finishReason !== 'STOP') {
          throw new Error(`Gemini API回覆被內容過濾阻擋。Finish Reason: ${data.candidates[0].finishReason}`);
       }
@@ -249,11 +247,11 @@ async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   }
 }
 
-// Gemini Flash 備用分析函數 - *** 修正 API Key 傳輸方式為 URL 參數 ***
+// Gemini Flash 備用分析函數 - *** 最終修正: 使用 v1beta 和 gemini-flash ***
 async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) {
   const prompt = createStructuredPrompt(stockId, stockName, analysisType);
-  const MODEL = 'gemini-2.5-flash'; // 使用最新的 Flash 模型別名
-  const API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1/models/'; // 使用 v1 穩定版 API
+  const MODEL = 'gemini-flash'; // 降級到更通用的 Flash 模型名稱
+  const API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/'; // 降級到 v1beta 端點
 
   console.log(`發送結構化請求到Gemini Flash API (${MODEL})...`);
 
@@ -261,12 +259,11 @@ async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) 
   const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
-    // *** 修正點: 將 API Key 放入 URL 查詢參數 ***
+    // 保持 API Key 在 URL 查詢參數
     const response = await fetch(`${API_ENDPOINT}${MODEL}:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // 'X-goog-api-key': apiKey // 移除 Header 傳輸方式
       },
       body: JSON.stringify({
         contents: [{
@@ -431,7 +428,7 @@ async function analyzeWithGrok(stockId, stockName, apiKey, analysisType) {
   return parsedResult;
 }
 
-// 創建結構化提示詞 - *** 日期格式為西元年 (已修正) ***
+// 創建結構化提示詞 - 日期格式為西元年
 function createStructuredPrompt(stockId, stockName, analysisType) {
   // 確保使用西元年 YYYY/MM/DD 格式
   const now = new Date();
