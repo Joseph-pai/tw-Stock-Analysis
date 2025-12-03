@@ -135,44 +135,175 @@ async function analyzeWithGPT(stockId, stockName, apiKey, analysisType) {
   return parsedResult;
 }
 
-// Gemini 結構化分析
+// Gemini 結構化分析 - 已修正
 async function analyzeWithGemini(stockId, stockName, apiKey, analysisType) {
   const prompt = createStructuredPrompt(stockId, stockName, analysisType);
 
   console.log('發送結構化請求到Gemini API...');
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      contents: [{
-        parts: [{
-          text: prompt
-        }]
-      }],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 2000
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超時
+
+  try {
+    // 修正1: 使用 v1beta API 版本和 gemini-1.5-pro 模型
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 2000,
+          topP: 0.8,
+          topK: 40
+        },
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_HATE_SPEECH",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_NONE"
+          }
+        ]
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    console.log('Gemini API響應狀態:', response.status);
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Gemini API錯誤詳情:', errorData);
+      
+      // 如果 gemini-1.5-pro 失敗，嘗試 gemini-1.5-flash
+      if (response.status === 404) {
+        console.log('gemini-1.5-pro 模型未找到，嘗試 gemini-1.5-flash...');
+        return await analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType);
       }
-    })
-  });
+      
+      throw new Error(`Gemini API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
 
-  console.log('Gemini API響應狀態:', response.status);
+    const data = await response.json();
+    console.log('Gemini API響應數據結構:', Object.keys(data));
+    
+    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
+      console.error('Gemini API返回數據格式錯誤:', data);
+      throw new Error('Gemini API返回數據格式錯誤：缺少必要字段');
+    }
+    
+    const content = data.candidates[0].content.parts[0].text;
+    console.log('Gemini回應內容長度:', content.length);
+    console.log('Gemini回應內容:', content.substring(0, 500));
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(`Gemini API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
+    const parsedResult = parseStructuredResponse(content, analysisType, stockName);
+    return parsedResult;
+    
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Gemini API請求超時');
+    }
+    throw error;
   }
+}
 
-  const data = await response.json();
-  const content = data.candidates[0].content.parts[0].text;
+// Gemini Flash 備用分析函數
+async function analyzeWithGeminiFlash(stockId, stockName, apiKey, analysisType) {
+  const prompt = createStructuredPrompt(stockId, stockName, analysisType);
 
-  console.log('Gemini回應內容:', content.substring(0, 500));
+  console.log('發送結構化請求到Gemini Flash API...');
 
-  const parsedResult = parseStructuredResponse(content, analysisType, stockName);
-  return parsedResult;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    // 使用 gemini-1.5-flash 模型
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 2000,
+          topP: 0.8,
+          topK: 40
+        },
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_HATE_SPEECH",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_NONE"
+          }
+        ]
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    console.log('Gemini Flash API響應狀態:', response.status);
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Gemini Flash API錯誤: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
+      throw new Error('Gemini Flash API返回數據格式錯誤');
+    }
+    
+    const content = data.candidates[0].content.parts[0].text;
+    console.log('Gemini Flash回應內容:', content.substring(0, 500));
+
+    const parsedResult = parseStructuredResponse(content, analysisType, stockName);
+    return parsedResult;
+    
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Gemini Flash API請求超時');
+    }
+    throw error;
+  }
 }
 
 // Claude 結構化分析
