@@ -32,40 +32,40 @@
         td, th { vertical-align: middle; }
         .stock-search { max-width: 300px; }
         /* 新增：解決左右太靠邊緣的問題 */
-.container {
-    max-width: 1350px;
-    padding-left: 30px !important;  /* 添加左邊距 */
-    padding-right: 30px !important; /* 添加右邊距 */
-}
+        .container {
+            max-width: 1350px;
+            padding-left: 30px !important;  /* 添加左邊距 */
+            padding-right: 30px !important; /* 添加右邊距 */
+        }
 
-/* 針對卡片內容添加內邊距 */
-.card {
-    background: rgba(255,255,255,0.12);
-    backdrop-filter: blur(12px);
-    border: none;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-    margin-left: 10px !important;    /* 添加左邊距 */
-    margin-right: 10px !important;   /* 添加右邊距 */
-}
+        /* 針對卡片內容添加內邊距 */
+        .card {
+            background: rgba(255,255,255,0.12);
+            backdrop-filter: blur(12px);
+            border: none;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            margin-left: 10px !important;    /* 添加左邊距 */
+            margin-right: 10px !important;   /* 添加右邊距 */
+        }
 
-/* 針對表格添加內邊距 */
-.table-responsive {
-    padding-left: 15px;
-    padding-right: 15px;
-}
+        /* 針對表格添加內邊距 */
+        .table-responsive {
+            padding-left: 15px;
+            padding-right: 15px;
+        }
 
-/* 針對 AI 分析結果區域添加內邊距 */
-#aiAnalysisResult .row .col-md-6 {
-    padding-left: 15px;
-    padding-right: 15px;
-}
+        /* 針對 AI 分析結果區域添加內邊距 */
+        #aiAnalysisResult .row .col-md-6 {
+            padding-left: 15px;
+            padding-right: 15px;
+        }
 
-/* 確保圖表不會貼邊 */
-canvas {
-    margin: 0 auto;
-    display: block;
-    max-width: 95%;  /* 限制最大寬度 */
-}
+        /* 確保圖表不會貼邊 */
+        canvas {
+            margin: 0 auto;
+            display: block;
+            max-width: 95%;  /* 限制最大寬度 */
+        }
     </style>
 </head>
 <body>
@@ -74,20 +74,20 @@ canvas {
     <h1 class="text-center mb-2">台股趨勢AI專業分析助手</h1>
     <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/26 專業評分詳解版 • Netlify Functions + TWSE API</p>
 
- <div class="row justify-content-center mb-4">
-    <div class="col-md-8">
-        <!-- 修改後的 Token 輸入區域 -->
-        <div class="mb-3">
-            <label class="form-label text-white-50 mb-2">FinMind Token（選填）</label>
-            <div class="input-group">
-                <input type="text" id="tokenInput" class="form-control bg-white text-dark" placeholder="貼上 Token 或留空使用公開資料">
-                <button class="btn btn-warning fw-bold" id="saveToken">儲存</button>
+    <div class="row justify-content-center mb-4">
+        <div class="col-md-8">
+            <!-- 修改後的 Token 輸入區域 -->
+            <div class="mb-3">
+                <label class="form-label text-white-50 mb-2">FinMind Token（選填）</label>
+                <div class="input-group">
+                    <input type="text" id="tokenInput" class="form-control bg-white text-dark" placeholder="貼上 Token 或留空使用公開資料">
+                    <button class="btn btn-warning fw-bold" id="saveToken">儲存</button>
+                </div>
             </div>
+            <small class="text-white-50">免費註冊 → <a href="https://finmindtrade.com/analysis/#/account/register" target="_blank" class="text-warning">FinMind（30秒）</a> ｜ 或直接使用證交所+觀測站公開資料</small>
+            <div id="tokenStatus" class="token-status mt-2"></div>
         </div>
-        <small class="text-white-50">免費註冊 → <a href="https://finmindtrade.com/analysis/#/account/register" target="_blank" class="text-warning">FinMind（30秒）</a> ｜ 或直接使用證交所+觀測站公開資料</small>
-        <div id="tokenStatus" class="token-status mt-2"></div>
     </div>
-</div>
 
     <div class="row justify-content-center mb-4">
         <div class="col-md-8">
@@ -993,7 +993,8 @@ document.addEventListener('DOMContentLoaded', () => {
             throw error;
         }
     }
-        // 顯示分析結果到對應區塊
+    
+    // 顯示分析結果到對應區塊
     function displayAnalysisResult(result, analysisType, stockName) {
         const prefix = analysisType === 'news' ? 'news' : 'risk';
         
@@ -1163,7 +1164,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         log('已清除所有分析結果');
     });
-        // ================= 核心 API 函數 =================
+
+    // ================= 核心 API 函數 =================
 
     async function fetchFinmind(dataset, dataId = '', startDate = '', endDate = '', retries = 3) {
         if (!TOKEN && dataset !== 'TaiwanStockInfo') return null;
@@ -1219,8 +1221,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return (data && Array.isArray(data) && data.length > 0) ? data : null;
         } catch (err) { return null; }
     }
-
-    // ================= 財務數據獲取 - 優先 FinMind =================
+        // ================= 財務數據獲取 - 優先 FinMind =================
     
     async function fetchFinancialData(stockId) {
         log(`開始獲取財務數據: ${stockId}`);
@@ -2058,7 +2059,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (finalEl) finalEl.innerHTML = `<h1 class="score-big ${color}">${final >= 0 ? '+' : ''}${final}%</h1>`;
     }
 
-    // ================= 主分析表單提交 =================
+    // ================= 主分析表單提交 - 包含關鍵修改 =================
     
     document.getElementById('analyzeForm').onsubmit = async e => {
         e.preventDefault();
@@ -2099,23 +2100,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let marketData = await fetchYahooWithProxy('%5ETWII', '大盤');
 
-const allTimestamps = priceDataFinal.chart.result[0].timestamp;
-const allCloses = priceDataFinal.chart.result[0].indicators.quote[0].close;
-const startTs = new Date(startDate).getTime() / 1000;
-const endTs = new Date(endDate).getTime() / 1000;
+            const allTimestamps = priceDataFinal.chart.result[0].timestamp;
+            const allCloses = priceDataFinal.chart.result[0].indicators.quote[0].close;
+            const startTs = new Date(startDate).getTime() / 1000;
+            const endTs = new Date(endDate).getTime() / 1000;
 
-// 修改這裡：先過濾時間範圍，再過濾掉 close 為空的點
-const filteredData = allTimestamps.map((ts, i) => ({ ts, close: allCloses[i] }))
-    .filter(d => d.ts >= startTs && d.ts <= endTs)  // 先過濾時間範圍
-    .filter(d => d.close != null);  // 再過濾掉 close 為 null/undefined 的點
+            // ================= 關鍵修改：修復曲線圖數據處理 =================
+            const filteredData = allTimestamps.map((ts, i) => ({ 
+                ts, 
+                close: allCloses[i] 
+            })).filter(d => {
+                // 確保時間戳在範圍內
+                const inTimeRange = d.ts >= startTs && d.ts <= endTs;
+                // 確保 close 值有效（不是 null、undefined 或 NaN）
+                const hasValidClose = d.close != null && !isNaN(d.close);
+                return inTimeRange && hasValidClose;
+            });
 
-const closes = filteredData.map(d => d.close);
-const timestamps = filteredData.map(d => d.ts);
+            const closes = filteredData.map(d => d.close);
+            const timestamps = filteredData.map(d => d.ts);
 
-if (closes.length === 0) throw new Error('指定日期範圍內無股價資料');
+            if (closes.length === 0) throw new Error('指定日期範圍內無股價資料');
 
-const price = closes.at(-1).toFixed(2);
-const risePercent = closes.length >= 2 ? ((closes.at(-1) - closes[0]) / closes[0] * 100).toFixed(2) : 0;
+            const price = closes.at(-1).toFixed(2);
+            const risePercent = closes.length >= 2 ? ((closes.at(-1) - closes[0]) / closes[0] * 100).toFixed(2) : 0;
+
             const techW = weights.technical || 25;
             let techScore = 0;
             let techReason = '區間震盪';
@@ -2297,16 +2306,51 @@ const risePercent = closes.length >= 2 ? ((closes.at(-1) - closes[0]) / closes[0
             setupManualInputListeners();
             updateFinancialUI();
 
+            // 確保大盤數據長度與股票數據匹配
+            let marketChartData = [];
+            if (marketData && marketData.chart?.result?.[0]?.indicators?.quote?.[0]?.close) {
+                // 取與股票數據相同長度的大盤數據
+                const marketAllCloses = marketData.chart.result[0].indicators.quote[0].close;
+                // 取最後 closes.length 個數據點
+                marketChartData = marketAllCloses.slice(-closes.length);
+                // 確保長度一致
+                if (marketChartData.length > closes.length) {
+                    marketChartData = marketChartData.slice(-closes.length);
+                }
+            }
+
             new Chart(document.getElementById('priceChart'), {
                 type: 'line',
                 data: {
                     labels: timestamps.map(t => new Date(t*1000).toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'})),
                     datasets: [
-                        { label: name, data: closes, borderColor: '#00ff88', tension: 0.3, fill: false, pointRadius: 0 },
-                        { label: '大盤', data: marketData?.chart?.result[0].indicators.quote[0].close.slice(-closes.length) || [], borderColor: '#ff4444', tension: 0.3, fill: false, pointRadius: 0 }
+                        { 
+                            label: name, 
+                            data: closes, 
+                            borderColor: '#00ff88', 
+                            tension: 0.3, 
+                            fill: false, 
+                            pointRadius: 0 
+                        },
+                        { 
+                            label: '大盤', 
+                            data: marketChartData, 
+                            borderColor: '#ff4444', 
+                            tension: 0.3, 
+                            fill: false, 
+                            pointRadius: 0 
+                        }
                     ]
                 },
-                options: { responsive: true, interaction: { mode: 'index', intersect: false }, plugins: { legend: { labels: { color: 'black' } } }, scales: { x: { ticks: { color: 'black' } }, y: { ticks: { color: 'black' } } } }
+                options: { 
+                    responsive: true, 
+                    interaction: { mode: 'index', intersect: false }, 
+                    plugins: { legend: { labels: { color: 'black' } } }, 
+                    scales: { 
+                        x: { ticks: { color: 'black' } }, 
+                        y: { ticks: { color: 'black' } } 
+                    } 
+                }
             });
 
             document.getElementById('result').style.display = 'block';
