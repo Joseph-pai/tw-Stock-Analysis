@@ -2099,20 +2099,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let marketData = await fetchYahooWithProxy('%5ETWII', '大盤');
 
-            const allTimestamps = priceDataFinal.chart.result[0].timestamp;
-            const allCloses = priceDataFinal.chart.result[0].indicators.quote[0].close;
-            const startTs = new Date(startDate).getTime() / 1000;
-            const endTs = new Date(endDate).getTime() / 1000;
-            
-            const filteredData = allTimestamps.map((ts, i) => ({ ts, close: allCloses[i] })).filter(d => d.ts >= startTs && d.ts <= endTs && d.close);
-            const closes = filteredData.map(d => d.close);
-            const timestamps = filteredData.map(d => d.ts);
-            
-            if (closes.length === 0) throw new Error('指定日期範圍內無股價資料');
+const allTimestamps = priceDataFinal.chart.result[0].timestamp;
+const allCloses = priceDataFinal.chart.result[0].indicators.quote[0].close;
+const startTs = new Date(startDate).getTime() / 1000;
+const endTs = new Date(endDate).getTime() / 1000;
 
-            const price = closes.at(-1).toFixed(2);
-            const risePercent = closes.length >= 2 ? ((closes.at(-1) - closes[0]) / closes[0] * 100).toFixed(2) : 0;
-            
+// 修改這裡：先過濾時間範圍，再過濾掉 close 為空的點
+const filteredData = allTimestamps.map((ts, i) => ({ ts, close: allCloses[i] }))
+    .filter(d => d.ts >= startTs && d.ts <= endTs)  // 先過濾時間範圍
+    .filter(d => d.close != null);  // 再過濾掉 close 為 null/undefined 的點
+
+const closes = filteredData.map(d => d.close);
+const timestamps = filteredData.map(d => d.ts);
+
+if (closes.length === 0) throw new Error('指定日期範圍內無股價資料');
+
+const price = closes.at(-1).toFixed(2);
+const risePercent = closes.length >= 2 ? ((closes.at(-1) - closes[0]) / closes[0] * 100).toFixed(2) : 0;
             const techW = weights.technical || 25;
             let techScore = 0;
             let techReason = '區間震盪';
