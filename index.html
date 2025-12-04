@@ -31,6 +31,13 @@
         .basis-box { background: rgba(0,0,0,0.3); border-left: 4px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 4px; }
         td, th { vertical-align: middle; }
         .stock-search { max-width: 300px; }
+        
+        /* 新增样式 */
+        .ai-analysis-section { margin-bottom: 20px; }
+        .ai-analysis-toggle { cursor: pointer; }
+        .ai-analysis-content { margin-top: 15px; }
+        .chart-container { margin: 20px 0; padding: 15px; background: rgba(255,255,255,0.9); border-radius: 10px; }
+        .data-section { margin: 15px 0; padding: 10px; }
     </style>
 </head>
 <body>
@@ -112,15 +119,15 @@
         </div>
     </div>
 
-<!-- AI 分析功能區域 -->
-<div class="row justify-content-center mb-4">
+<!-- AI 分析功能區域 - 添加折疊功能 -->
+<div class="row justify-content-center mb-4 ai-analysis-section">
     <div class="col-md-12">
         <div class="card text-dark">
-            <div class="card-header bg-info text-white">
+            <div class="card-header bg-info text-white ai-analysis-toggle" data-bs-toggle="collapse" data-bs-target="#aiAnalysisContent">
                 <strong>🔍 AI 雙重分析助手</strong>
-                <small class="float-end">同時分析消息面與風險面</small>
+                <small class="float-end">點擊展開/收合 | 同時分析消息面與風險面</small>
             </div>
-            <div class="card-body">
+            <div class="card-body collapse show" id="aiAnalysisContent">
                 <div class="row g-3 align-items-center">
                     <div class="col-md-4">
                         <label class="form-label">AI平台選擇</label>
@@ -2163,7 +2170,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p class="data-source">資料來源: FinMind TWSE台灣證卷交易所</p>
                 </div>
 
-                <div class="row g-4">
+                <div class="row g-4 data-section">
                     <div class="col-lg-5">
                         <div class="card text-dark">
                             <div class="card-header bg-primary text-white"><strong>最新財報數據</strong></div>
@@ -2241,7 +2248,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
 
-                <div class="card mt-4">
+                <div class="chart-container card mt-4">
                     <div class="card-body"><canvas id="priceChart"></canvas></div>
                 </div>
             `;
@@ -2250,16 +2257,65 @@ document.addEventListener('DOMContentLoaded', () => {
             setupManualInputListeners();
             updateFinancialUI();
 
+            // 修改圖表顯示，讓大盤和個股同時顯示
             new Chart(document.getElementById('priceChart'), {
                 type: 'line',
                 data: {
                     labels: timestamps.map(t => new Date(t*1000).toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'})),
                     datasets: [
-                        { label: name, data: closes, borderColor: '#00ff88', tension: 0.3, fill: false, pointRadius: 0 },
-                        { label: '大盤', data: marketData?.chart?.result[0].indicators.quote[0].close.slice(-closes.length) || [], borderColor: '#ff4444', tension: 0.3, fill: false, pointRadius: 0 }
+                        { 
+                            label: name, 
+                            data: closes, 
+                            borderColor: '#00ff88', 
+                            backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                            tension: 0.3, 
+                            fill: false, 
+                            pointRadius: 0 
+                        },
+                        { 
+                            label: '大盤', 
+                            data: marketData?.chart?.result[0].indicators.quote[0].close.slice(-closes.length) || [], 
+                            borderColor: '#ff4444', 
+                            backgroundColor: 'rgba(255, 68, 68, 0.1)',
+                            tension: 0.3, 
+                            fill: false, 
+                            pointRadius: 0 
+                        }
                     ]
                 },
-                options: { responsive: true, interaction: { mode: 'index', intersect: false }, plugins: { legend: { labels: { color: 'black' } } }, scales: { x: { ticks: { color: 'black' } }, y: { ticks: { color: 'black' } } } }
+                options: { 
+                    responsive: true, 
+                    interaction: { mode: 'index', intersect: false }, 
+                    plugins: { 
+                        legend: { 
+                            labels: { 
+                                color: 'black',
+                                font: { size: 14 }
+                            } 
+                        } 
+                    }, 
+                    scales: { 
+                        x: { 
+                            ticks: { 
+                                color: 'black',
+                                maxTicksLimit: 10
+                            } 
+                        }, 
+                        y: { 
+                            ticks: { 
+                                color: 'black',
+                                callback: function(value) {
+                                    return value.toFixed(0);
+                                }
+                            } 
+                        } 
+                    },
+                    // 添加懸停效果
+                    hover: {
+                        mode: 'nearest',
+                        intersect: true
+                    }
+                }
             });
 
             document.getElementById('result').style.display = 'block';
