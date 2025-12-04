@@ -31,41 +31,6 @@
         .basis-box { background: rgba(0,0,0,0.3); border-left: 4px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 4px; }
         td, th { vertical-align: middle; }
         .stock-search { max-width: 300px; }
-        /* 新增：解決左右太靠邊緣的問題 */
-.container {
-    max-width: 1350px;
-    padding-left: 30px !important;  /* 添加左邊距 */
-    padding-right: 30px !important; /* 添加右邊距 */
-}
-
-/* 針對卡片內容添加內邊距 */
-.card {
-    background: rgba(255,255,255,0.12);
-    backdrop-filter: blur(12px);
-    border: none;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-    margin-left: 10px !important;    /* 添加左邊距 */
-    margin-right: 10px !important;   /* 添加右邊距 */
-}
-
-/* 針對表格添加內邊距 */
-.table-responsive {
-    padding-left: 15px;
-    padding-right: 15px;
-}
-
-/* 針對 AI 分析結果區域添加內邊距 */
-#aiAnalysisResult .row .col-md-6 {
-    padding-left: 15px;
-    padding-right: 15px;
-}
-
-/* 確保圖表不會貼邊 */
-canvas {
-    margin: 0 auto;
-    display: block;
-    max-width: 95%;  /* 限制最大寬度 */
-}
     </style>
 </head>
 <body>
@@ -151,190 +116,181 @@ canvas {
 <div class="row justify-content-center mb-4">
     <div class="col-md-12">
         <div class="card text-dark">
-            <!-- 修改標題，使其可點擊並觸發摺疊 -->
-            <div class="card-header bg-info text-white" 
-                 style="cursor: pointer;" 
-                 data-bs-toggle="collapse" 
-                 data-bs-target="#aiAnalysisCollapse" 
-                 aria-expanded="true" 
-                 aria-controls="aiAnalysisCollapse">
+            <div class="card-header bg-info text-white">
                 <strong>🔍 AI 雙重分析助手</strong>
-                <small class="float-end">點擊此處收起/展開 (同時分析消息面與風險面)</small>
+                <small class="float-end">同時分析消息面與風險面</small>
             </div>
-            
-            <!-- 這是摺疊內容區域，id 對應上面的 data-bs-target -->
-            <div id="aiAnalysisCollapse" class="collapse show">
-                <div class="card-body">
-                    <div class="row g-3 align-items-center">
-                        <div class="col-md-4">
-                            <label class="form-label">AI平台選擇</label>
-                            <select id="aiPlatform" class="form-select">
-                                <option value="deepseek">DeepSeek (推薦)</option>
-                                <option value="gpt">ChatGPT (OpenAI)</option>
-                                <option value="gemini">Gemini (Google)</option>
-                                <option value="claude">Claude (Anthropic)</option>
-                                <option value="grok">Grok (xAI)</option>
-                            </select>
-                            <small class="text-muted">
-                                <a href="#" id="getApiLink" class="text-primary">📌 獲取API Key</a>
-                            </small>
+            <div class="card-body">
+                <div class="row g-3 align-items-center">
+                    <div class="col-md-4">
+                        <label class="form-label">AI平台選擇</label>
+                        <select id="aiPlatform" class="form-select">
+                            <option value="deepseek">DeepSeek (推薦)</option>
+                            <option value="gpt">ChatGPT (OpenAI)</option>
+                            <option value="gemini">Gemini (Google)</option>
+                            <option value="claude">Claude (Anthropic)</option>
+                            <option value="grok">Grok (xAI)</option>
+                        </select>
+                        <small class="text-muted">
+                            <a href="#" id="getApiLink" class="text-primary">📌 獲取API Key</a>
+                        </small>
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label">API Key</label>
+                        <div class="input-group">
+                            <input type="password" id="aiApiKey" class="form-control" placeholder="輸入選擇平台的 API Key">
+                            <button class="btn btn-outline-primary" type="button" id="verifyAiKey">驗證</button>
                         </div>
-                        <div class="col-md-5">
-                            <label class="form-label">API Key</label>
-                            <div class="input-group">
-                                <input type="password" id="aiApiKey" class="form-control" placeholder="輸入選擇平台的 API Key">
-                                <button class="btn btn-outline-primary" type="button" id="verifyAiKey">驗證</button>
+                        <small class="text-muted" id="apiKeyHint">請輸入有效的API Key</small>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">分析模式</label>
+                        <div class="d-flex flex-column">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="parallelAnalysis" checked>
+                                <label class="form-check-label" for="parallelAnalysis">
+                                    🚀 並行雙重分析
+                                </label>
                             </div>
-                            <small class="text-muted" id="apiKeyHint">請輸入有效的API Key</small>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">分析模式</label>
-                            <div class="d-flex flex-column">
-                                <div class="form-check mb-2">
-                                    <input class="form-check-input" type="checkbox" id="parallelAnalysis" checked>
-                                    <label class="form-check-label" for="parallelAnalysis">
-                                        🚀 並行雙重分析
-                                    </label>
-                                </div>
-                                <small class="text-muted">同時進行消息面與風險面分析</small>
-                            </div>
+                            <small class="text-muted">同時進行消息面與風險面分析</small>
                         </div>
                     </div>
-                    
-                    <div class="row mt-3">
-                        <div class="col-12">
-                            <div class="d-flex gap-2 flex-wrap">
-                                <button class="btn btn-primary" id="aiAnalyzeBtn" disabled>
-                                    <span class="spinner-border spinner-border-sm me-2" id="aiSpinner" style="display: none;"></span>
-                                    🤖 開始雙重分析
-                                </button>
-                                <button class="btn btn-outline-secondary" id="clearAiAnalysis">
-                                    🗑️ 清除所有分析
-                                </button>
-                                <button class="btn btn-outline-info" id="testConnectionBtn">
-                                    🔗 測試連線
-                                </button>
-                                <button class="btn btn-outline-success" id="singleNewsAnalysis" disabled>
-                                    📰 僅消息面分析
-                                </button>
-                                <button class="btn btn-outline-warning" id="singleRiskAnalysis" disabled>
-                                    ⚠️ 僅風險面分析
-                                </button>
-                                <div id="aiKeyStatus" class="ms-2 align-self-center"></div>
-                            </div>
+                </div>
+                
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button class="btn btn-primary" id="aiAnalyzeBtn" disabled>
+                                <span class="spinner-border spinner-border-sm me-2" id="aiSpinner" style="display: none;"></span>
+                                🤖 開始雙重分析
+                            </button>
+                            <button class="btn btn-outline-secondary" id="clearAiAnalysis">
+                                🗑️ 清除所有分析
+                            </button>
+                            <button class="btn btn-outline-info" id="testConnectionBtn">
+                                🔗 測試連線
+                            </button>
+                            <button class="btn btn-outline-success" id="singleNewsAnalysis" disabled>
+                                📰 僅消息面分析
+                            </button>
+                            <button class="btn btn-outline-warning" id="singleRiskAnalysis" disabled>
+                                ⚠️ 僅風險面分析
+                            </button>
+                            <div id="aiKeyStatus" class="ms-2 align-self-center"></div>
                         </div>
                     </div>
+                </div>
 
-                    <!-- 並行分析進度指示器 -->
-                    <div id="parallelProgress" class="mt-3" style="display: none;">
-                        <div class="progress" style="height: 25px;">
-                            <div id="newsProgress" class="progress-bar bg-danger" role="progressbar" style="width: 0%;">
-                                消息面分析中...
-                            </div>
-                            <div id="riskProgress" class="progress-bar bg-warning" role="progressbar" style="width: 0%;">
-                                風險面分析中...
-                            </div>
+                <!-- 並行分析進度指示器 -->
+                <div id="parallelProgress" class="mt-3" style="display: none;">
+                    <div class="progress" style="height: 25px;">
+                        <div id="newsProgress" class="progress-bar bg-danger" role="progressbar" style="width: 0%;">
+                            消息面分析中...
                         </div>
-                        <div class="d-flex justify-content-between mt-2">
-                            <small id="newsStatus">🔄 等待開始</small>
-                            <small id="riskStatus">🔄 等待開始</small>
+                        <div id="riskProgress" class="progress-bar bg-warning" role="progressbar" style="width: 0%;">
+                            風險面分析中...
                         </div>
                     </div>
+                    <div class="d-flex justify-content-between mt-2">
+                        <small id="newsStatus">🔄 等待開始</small>
+                        <small id="riskStatus">🔄 等待開始</small>
+                    </div>
+                </div>
 
-                    <!-- AI 雙重分析結果顯示 -->
-                    <div id="aiAnalysisResult" class="mt-4" style="display: none;">
-                        <div class="row">
-                            <!-- 消息面分析結果區塊 -->
-                            <div class="col-md-6 mb-3">
-                                <div class="card h-100">
-                                    <div class="card-header bg-danger text-white">
-                                        <strong>📰 消息面分析結果</strong>
-                                        <div class="float-end">
-                                            <span id="newsScoreBadge" class="badge bg-light text-dark">--/10</span>
-                                            <button class="btn btn-sm btn-light ms-2" onclick="copyToClipboard('newsAnalysisContent')">📋</button>
-                                        </div>
-                                    </div>
-                                    <div class="card-body">
-                                        <div class="border rounded p-3 bg-light" style="max-height: 400px; overflow-y: auto;">
-                                            <pre id="newsAnalysisContent" style="white-space: pre-wrap; font-family: inherit; margin: 0;">請先進行分析...</pre>
-                                        </div>
-                                        <div class="mt-3">
-                                            <div class="d-flex justify-content-between align-items-center">
-                                                <strong>評分: </strong>
-                                                <span id="newsScoreDisplay" class="fs-4 fw-bold">--</span>
-                                            </div>
-                                            <div class="mt-2">
-                                                <strong>建議: </strong>
-                                                <span id="newsComment" class="text-muted">--</span>
-                                            </div>
-                                            <button class="btn btn-sm btn-success w-100 mt-2" id="applyNewsScore">
-                                                ✅ 應用消息面評分
-                                            </button>
-                                        </div>
+                <!-- AI 雙重分析結果顯示 -->
+                <div id="aiAnalysisResult" class="mt-4" style="display: none;">
+                    <div class="row">
+                        <!-- 消息面分析結果區塊 -->
+                        <div class="col-md-6 mb-3">
+                            <div class="card h-100">
+                                <div class="card-header bg-danger text-white">
+                                    <strong>📰 消息面分析結果</strong>
+                                    <div class="float-end">
+                                        <span id="newsScoreBadge" class="badge bg-light text-dark">--/10</span>
+                                        <button class="btn btn-sm btn-light ms-2" onclick="copyToClipboard('newsAnalysisContent')">📋</button>
                                     </div>
                                 </div>
-                            </div>
-                            
-                            <!-- 風險面分析結果區塊 -->
-                            <div class="col-md-6 mb-3">
-                                <div class="card h-100">
-                                    <div class="card-header bg-warning text-dark">
-                                        <strong>⚠️ 風險面分析結果</strong>
-                                        <div class="float-end">
-                                            <span id="riskScoreBadge" class="badge bg-light text-dark">--/10</span>
-                                            <button class="btn btn-sm btn-light ms-2" onclick="copyToClipboard('riskAnalysisContent')">📋</button>
-                                        </div>
+                                <div class="card-body">
+                                    <div class="border rounded p-3 bg-light" style="max-height: 400px; overflow-y: auto;">
+                                        <pre id="newsAnalysisContent" style="white-space: pre-wrap; font-family: inherit; margin: 0;">請先進行分析...</pre>
                                     </div>
-                                    <div class="card-body">
-                                        <div class="border rounded p-3 bg-light" style="max-height: 400px; overflow-y: auto;">
-                                            <pre id="riskAnalysisContent" style="white-space: pre-wrap; font-family: inherit; margin: 0;">請先進行分析...</pre>
+                                    <div class="mt-3">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <strong>評分: </strong>
+                                            <span id="newsScoreDisplay" class="fs-4 fw-bold">--</span>
                                         </div>
-                                        <div class="mt-3">
-                                            <div class="d-flex justify-content-between align-items-center">
-                                                <strong>評分: </strong>
-                                                <small class="text-muted">(+風險低/-風險高)</small>
-                                            </div>
-                                            <span id="riskScoreDisplay" class="fs-4 fw-bold">--</span>
-                                            <div class="mt-2">
-                                                <strong>建議: </strong>
-                                                <span id="riskComment" class="text-muted">--</span>
-                                            </div>
-                                            <button class="btn btn-sm btn-success w-100 mt-2" id="applyRiskScore">
-                                                ✅ 應用風險面評分
-                                            </button>
+                                        <div class="mt-2">
+                                            <strong>建議: </strong>
+                                            <span id="newsComment" class="text-muted">--</span>
                                         </div>
+                                        <button class="btn btn-sm btn-success w-100 mt-2" id="applyNewsScore">
+                                            ✅ 應用消息面評分
+                                        </button>
                                     </div>
                                 </div>
                             </div>
                         </div>
                         
-                        <!-- 合併評分區域 -->
-                        <div class="row mt-3">
-                            <div class="col-md-12">
-                                <div class="card">
-                                    <div class="card-header bg-primary text-white">
-                                        <strong>📊 綜合分析摘要</strong>
+                        <!-- 風險面分析結果區塊 -->
+                        <div class="col-md-6 mb-3">
+                            <div class="card h-100">
+                                <div class="card-header bg-warning text-dark">
+                                    <strong>⚠️ 風險面分析結果</strong>
+                                    <div class="float-end">
+                                        <span id="riskScoreBadge" class="badge bg-light text-dark">--/10</span>
+                                        <button class="btn btn-sm btn-light ms-2" onclick="copyToClipboard('riskAnalysisContent')">📋</button>
                                     </div>
-                                    <div class="card-body">
-                                        <div class="row text-center">
-                                            <div class="col-md-6">
-                                                <h6>消息面評分</h6>
-                                                <div id="finalNewsScore" class="fs-1 fw-bold text-danger">--</div>
-                                                <div id="finalNewsComment" class="text-muted">--</div>
-                                                <small class="text-muted">(+利多/-利空)</small>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <h6>風險面評分</h6>
-                                                <div id="finalRiskScore" class="fs-1 fw-bold text-warning">--</div>
-                                                <div id="finalRiskComment" class="text-muted">--</div>
-                                            </div>
+                                </div>
+                                <div class="card-body">
+                                    <div class="border rounded p-3 bg-light" style="max-height: 400px; overflow-y: auto;">
+                                        <pre id="riskAnalysisContent" style="white-space: pre-wrap; font-family: inherit; margin: 0;">請先進行分析...</pre>
+                                    </div>
+                                    <div class="mt-3">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <strong>評分: </strong>
+                                            <small class="text-muted">(+風險低/-風險高)</small>
+                                         </div>
+                                         <span id="riskScoreDisplay" class="fs-4 fw-bold">--</span>
                                         </div>
-                                        <div class="text-center mt-3">
-                                            <button class="btn btn-primary" id="applyBothScores">
-                                                ✅ 同時應用兩項評分
-                                            </button>
-                                            <small class="text-muted d-block mt-2">將同時更新消息面(10%)和風險面(10%)的評分</small>
+                                        <div class="mt-2">
+                                            <strong>建議: </strong>
+                                            <span id="riskComment" class="text-muted">--</span>
                                         </div>
+                                        <button class="btn btn-sm btn-success w-100 mt-2" id="applyRiskScore">
+                                            ✅ 應用風險面評分
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 合併評分區域 -->
+                    <div class="row mt-3">
+                        <div class="col-md-12">
+                            <div class="card">
+                                <div class="card-header bg-primary text-white">
+                                    <strong>📊 綜合分析摘要</strong>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row text-center">
+                                        <div class="col-md-6">
+                                            <h6>消息面評分</h6>
+                                            <div id="finalNewsScore" class="fs-1 fw-bold text-danger">--</div>
+                                            <div id="finalNewsComment" class="text-muted">--</div>
+                                            <small class="text-muted">(+利多/-利空)</small>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <h6>風險面評分</h6>
+                                            <div id="finalRiskScore" class="fs-1 fw-bold text-warning">--</div>
+                                            <div id="finalRiskComment" class="text-muted">--</div>
+                                        </div>
+                                    </div>
+                                    <div class="text-center mt-3">
+                                        <button class="btn btn-primary" id="applyBothScores">
+                                            ✅ 同時應用兩項評分
+                                        </button>
+                                        <small class="text-muted d-block mt-2">將同時更新消息面(10%)和風險面(10%)的評分</small>
                                     </div>
                                 </div>
                             </div>
