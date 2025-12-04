@@ -2284,12 +2284,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const chartCanvas = document.getElementById('priceChart');
             const ctx = chartCanvas.getContext('2d');
             
-            // 清除之前的圖表（如果存在）
-            if (window.priceChart) {
-                window.priceChart.destroy();
+            // 檢查是否有之前的圖表實例，如果有則銷毀
+            if (window.priceChartInstance && typeof window.priceChartInstance.destroy === 'function') {
+                window.priceChartInstance.destroy();
             }
             
-            window.priceChart = new Chart(ctx, {
+            window.priceChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: timestamps.map(t => new Date(t*1000).toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'})),
