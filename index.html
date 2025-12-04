@@ -2257,63 +2257,164 @@ document.addEventListener('DOMContentLoaded', () => {
             setupManualInputListeners();
             updateFinancialUI();
 
-            // 修改圖表顯示，讓大盤和個股同時顯示
-            new Chart(document.getElementById('priceChart'), {
+            // 獲取大盤數據
+            let marketCloses = [];
+            if (marketData) {
+                marketCloses = marketData.chart.result[0].indicators.quote[0].close.slice(-closes.length);
+            }
+            
+            // 計算標準化數據，讓兩條曲線在同一範圍顯示
+            const normalizeData = (data) => {
+                const min = Math.min(...data);
+                const max = Math.max(...data);
+                const range = max - min;
+                
+                if (range === 0) {
+                    return data.map(() => 50); // 如果沒有變化，都設為50
+                }
+                
+                return data.map(value => ((value - min) / range) * 100);
+            };
+            
+            // 標準化個股和大盤數據
+            const normalizedCloses = normalizeData(closes);
+            const normalizedMarketCloses = marketCloses.length > 0 ? normalizeData(marketCloses) : [];
+            
+            // 創建圖表
+            const chartCanvas = document.getElementById('priceChart');
+            const ctx = chartCanvas.getContext('2d');
+            
+            // 清除之前的圖表（如果存在）
+            if (window.priceChart) {
+                window.priceChart.destroy();
+            }
+            
+            window.priceChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: timestamps.map(t => new Date(t*1000).toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'})),
                     datasets: [
                         { 
                             label: name, 
-                            data: closes, 
-                            borderColor: '#00ff88', 
+                            data: normalizedCloses, 
+                            borderColor: '#00ff88',
                             backgroundColor: 'rgba(0, 255, 136, 0.1)',
-                            tension: 0.3, 
-                            fill: false, 
-                            pointRadius: 0 
+                            tension: 0.3,
+                            fill: false,
+                            borderWidth: 2,
+                            pointRadius: 0
                         },
                         { 
                             label: '大盤', 
-                            data: marketData?.chart?.result[0].indicators.quote[0].close.slice(-closes.length) || [], 
-                            borderColor: '#ff4444', 
+                            data: normalizedMarketCloses, 
+                            borderColor: '#ff4444',
                             backgroundColor: 'rgba(255, 68, 68, 0.1)',
-                            tension: 0.3, 
-                            fill: false, 
-                            pointRadius: 0 
+                            tension: 0.3,
+                            fill: false,
+                            borderWidth: 2,
+                            pointRadius: 0
                         }
                     ]
                 },
-                options: { 
-                    responsive: true, 
-                    interaction: { mode: 'index', intersect: false }, 
-                    plugins: { 
-                        legend: { 
-                            labels: { 
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
                                 color: 'black',
-                                font: { size: 14 }
-                            } 
-                        } 
-                    }, 
-                    scales: { 
-                        x: { 
-                            ticks: { 
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                },
+                                padding: 20
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function(context) {
+                                    const datasetLabel = context.dataset.label || '';
+                                    const value = context.parsed.y;
+                                    const index = context.dataIndex;
+                                    
+                                    if (datasetLabel === name) {
+                                        const actualValue = closes[index];
+                                        return `${datasetLabel}: ${actualValue ? actualValue.toFixed(2) : 'N/A'}`;
+                                    } else if (datasetLabel === '大盤') {
+                                        const actualValue = marketCloses[index];
+                                        return `${datasetLabel}: ${actualValue ? actualValue.toFixed(2) : 'N/A'}`;
+                                    }
+                                    
+                                    return `${datasetLabel}: ${value.toFixed(2)}%`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '日期',
                                 color: 'black',
-                                maxTicksLimit: 10
-                            } 
-                        }, 
-                        y: { 
-                            ticks: { 
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            ticks: {
+                                color: 'black',
+                                maxTicksLimit: 10,
+                                font: {
+                                    size: 12
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '標準化價格 (%)',
+                                color: 'black',
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            ticks: {
                                 color: 'black',
                                 callback: function(value) {
-                                    return value.toFixed(0);
+                                    return value.toFixed(0) + '%';
+                                },
+                                font: {
+                                    size: 12
                                 }
-                            } 
-                        } 
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            },
+                            min: 0,
+                            max: 100
+                        }
                     },
-                    // 添加懸停效果
-                    hover: {
-                        mode: 'nearest',
-                        intersect: true
+                    elements: {
+                        line: {
+                            tension: 0.3
+                        }
+                    },
+                    animation: {
+                        duration: 1000
                     }
                 }
             });
