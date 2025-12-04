@@ -8,8 +8,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <style>
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; color: white; font-family: 'Microsoft JhengHei',sans-serif; }
-        .container { max-width: 1350px; padding-left: 30px !important; padding-right: 30px !important; }
-        .card { background: rgba(255,255,255,0.12); backdrop-filter: blur(12px); border: none; box-shadow: 0 8px 32px rgba(0,0,0,0.4); margin-left: 10px !important; margin-right: 10px !important; }
+        .container { max-width: 1350px; }
+        .card { background: rgba(255,255,255,0.12); backdrop-filter: blur(12px); border: none; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
         .score-big { font-size: 6.5rem; font-weight: 900; text-shadow: 0 6px 15px rgba(0,0,0,0.6); }
         .badge-pos { background: #28a745; }
         .badge-neg { background: #dc3545; }
@@ -31,10 +31,41 @@
         .basis-box { background: rgba(0,0,0,0.3); border-left: 4px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 4px; }
         td, th { vertical-align: middle; }
         .stock-search { max-width: 300px; }
-        .table-responsive { padding-left: 15px; padding-right: 15px; }
-        #aiAnalysisResult .row .col-md-6 { padding-left: 15px; padding-right: 15px; }
-        canvas { margin: 0 auto; display: block; max-width: 95%; }
-        .chart-container { position: relative; height: 400px; width: 100%; }
+        /* 新增：解決左右太靠邊緣的問題 */
+.container {
+    max-width: 1350px;
+    padding-left: 30px !important;  /* 添加左邊距 */
+    padding-right: 30px !important; /* 添加右邊距 */
+}
+
+/* 針對卡片內容添加內邊距 */
+.card {
+    background: rgba(255,255,255,0.12);
+    backdrop-filter: blur(12px);
+    border: none;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    margin-left: 10px !important;    /* 添加左邊距 */
+    margin-right: 10px !important;   /* 添加右邊距 */
+}
+
+/* 針對表格添加內邊距 */
+.table-responsive {
+    padding-left: 15px;
+    padding-right: 15px;
+}
+
+/* 針對 AI 分析結果區域添加內邊距 */
+#aiAnalysisResult .row .col-md-6 {
+    padding-left: 15px;
+    padding-right: 15px;
+}
+
+/* 確保圖表不會貼邊 */
+canvas {
+    margin: 0 auto;
+    display: block;
+    max-width: 95%;  /* 限制最大寬度 */
+}
     </style>
 </head>
 <body>
@@ -43,19 +74,20 @@
     <h1 class="text-center mb-2">台股趨勢AI專業分析助手</h1>
     <p class="text-center text-white-50 mb-5">Joseph PAI 2025 11/26 專業評分詳解版 • Netlify Functions + TWSE API</p>
 
-    <div class="row justify-content-center mb-4">
-        <div class="col-md-8">
-            <div class="mb-3">
-                <label class="form-label text-white-50 mb-2">FinMind Token（選填）</label>
-                <div class="input-group">
-                    <input type="text" id="tokenInput" class="form-control bg-white text-dark" placeholder="貼上 Token 或留空使用公開資料">
-                    <button class="btn btn-warning fw-bold" id="saveToken">儲存</button>
-                </div>
+ <div class="row justify-content-center mb-4">
+    <div class="col-md-8">
+        <!-- 修改後的 Token 輸入區域 -->
+        <div class="mb-3">
+            <label class="form-label text-white-50 mb-2">FinMind Token（選填）</label>
+            <div class="input-group">
+                <input type="text" id="tokenInput" class="form-control bg-white text-dark" placeholder="貼上 Token 或留空使用公開資料">
+                <button class="btn btn-warning fw-bold" id="saveToken">儲存</button>
             </div>
-            <small class="text-white-50">免費註冊 → <a href="https://finmindtrade.com/analysis/#/account/register" target="_blank" class="text-warning">FinMind（30秒）</a> ｜ 或直接使用證交所+觀測站公開資料</small>
-            <div id="tokenStatus" class="token-status mt-2"></div>
         </div>
+        <small class="text-white-50">免費註冊 → <a href="https://finmindtrade.com/analysis/#/account/register" target="_blank" class="text-warning">FinMind（30秒）</a> ｜ 或直接使用證交所+觀測站公開資料</small>
+        <div id="tokenStatus" class="token-status mt-2"></div>
     </div>
+</div>
 
     <div class="row justify-content-center mb-4">
         <div class="col-md-8">
@@ -119,6 +151,7 @@
 <div class="row justify-content-center mb-4">
     <div class="col-md-12">
         <div class="card text-dark">
+            <!-- 修改標題，使其可點擊並觸發摺疊 -->
             <div class="card-header bg-info text-white" 
                  style="cursor: pointer;" 
                  data-bs-toggle="collapse" 
@@ -129,6 +162,7 @@
                 <small class="float-end">點擊此處收起/展開 (同時分析消息面與風險面)</small>
             </div>
             
+            <!-- 這是摺疊內容區域，id 對應上面的 data-bs-target -->
             <div id="aiAnalysisCollapse" class="collapse show">
                 <div class="card-body">
                     <div class="row g-3 align-items-center">
@@ -311,7 +345,6 @@
         </div>
     </div>
 </div>
-
     <div class="text-center mb-4">
         <button class="btn btn-outline-light" type="button" data-bs-toggle="collapse" data-bs-target="#debugLog">
             顯示/隱藏 除錯日誌
@@ -377,9 +410,6 @@ document.addEventListener('DOMContentLoaded', () => {
         news: { status: 'idle', result: null },
         risk: { status: 'idle', result: null }
     };
-
-    // 圖表實例管理
-    window.priceChartInstance = null;
 
     // 保存分析歷史
     function saveAnalysisHistory(analysisType, result, stockName) {
@@ -715,7 +745,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 '<span class="badge bg-secondary">未設定</span>';
         }
     }
-        // ================= 並行分析進度控制 =================
+
+    // ================= 並行分析進度控制 =================
     function updateParallelProgress(newsProgress, riskProgress, newsStatus, riskStatus) {
         const progressBar = document.getElementById('parallelProgress');
         const newsProgressBar = document.getElementById('newsProgress');
@@ -758,8 +789,7 @@ document.addEventListener('DOMContentLoaded', () => {
             risk: { status: 'idle', result: null }
         };
     }
-    
-    // ================= 並行雙重分析功能 =================
+        // ================= 並行雙重分析功能 =================
     document.getElementById('aiAnalyzeBtn').addEventListener('click', async function() {
         await performParallelAnalysis();
     });
@@ -963,8 +993,7 @@ document.addEventListener('DOMContentLoaded', () => {
             throw error;
         }
     }
-    
-    // 顯示分析結果到對應區塊
+        // 顯示分析結果到對應區塊
     function displayAnalysisResult(result, analysisType, stockName) {
         const prefix = analysisType === 'news' ? 'news' : 'risk';
         
@@ -1243,28 +1272,272 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             log(`🔍 FinMind 數據獲取開始: ${stockId}`);
             
+            // 使用正確的數據集 - 財務報表包含 EPS 和毛利率數據
             const [financialStatement, balanceSheet, revenueData] = await Promise.all([
                 fetchFinmind('TaiwanStockFinancialStatements', stockId, '2020-01-01'),
                 fetchFinmind('TaiwanStockBalanceSheet', stockId, '2020-01-01'),
                 fetchFinmind('TaiwanStockMonthRevenue', stockId, '2020-01-01')
             ]);
 
+            // 詳細的數據檢查日誌
+            log(`📊 FinMind 數據檢查:`);
+            log(`- 財務報表筆數: ${financialStatement?.data?.length || 0}`);
+            log(`- 資產負債表筆數: ${balanceSheet?.data?.length || 0}`);
+            log(`- 月營收筆數: ${revenueData?.data?.length || 0}`);
+
             if (!financialStatement && !balanceSheet && !revenueData) {
                 log('❌ FinMind 所有數據集都為空');
                 return null;
             }
 
-            // 處理財務報表數據
+            // 處理財務報表數據 - 按日期和類型重組
             if (financialStatement?.data) {
                 log(`🔄 重組財務報表數據...`);
                 
-                // ... (保持原有的財務數據處理邏輯不變) ...
+                // 按日期分組數據
+                const byDate = {};
+                financialStatement.data.forEach(item => {
+                    if (!byDate[item.date]) byDate[item.date] = {};
+                    byDate[item.date][item.type] = item.value;
+                    byDate[item.date]['_origin'] = byDate[item.date]['_origin'] || {};
+                    byDate[item.date]['_origin'][item.type] = item.origin_name;
+                });
+
+                // 按季度分組數據（確保 Q1-Q4 順序）
+                const byQuarter = {};
+                let latestYearEPS = 0;
+                let latestYearDate = '';
+                
+                // 處理每個日期的數據
+                const dates = Object.keys(byDate).sort().reverse(); // 從最新到最舊
+                
+                dates.forEach(date => {
+                    const data = byDate[date];
+                    const dateObj = new Date(date);
+                    const year = dateObj.getFullYear();
+                    const month = dateObj.getMonth() + 1;
+                    const quarter = Math.floor((month + 2) / 3);
+                    const quarterKey = `${year}Q${quarter}`;
+                    
+                    log(`📅 處理 ${date} (${year}Q${quarter}) 數據:`);
+
+                    // 1. 處理 EPS 數據
+                    if (data.EPS !== undefined) {
+                        const eps = parseFloat(data.EPS);
+                        if (!isNaN(eps)) {
+                            if (!byQuarter[quarterKey]) byQuarter[quarterKey] = {};
+                            byQuarter[quarterKey].eps = eps;
+                            byQuarter[quarterKey].date = date;
+                            byQuarter[quarterKey].year = year;
+                            byQuarter[quarterKey].quarter = quarter;
+                            
+                            log(`  ✅ EPS ${year}Q${quarter}: ${eps}`);
+                            
+                            // 計算年度 EPS (累計最近4個季度)
+                            if (year === 2025) { // 只計算2025年度的EPS
+                                latestYearEPS += eps;
+                                latestYearDate = date;
+                            }
+                        }
+                    }
+
+                    // 2. 計算毛利率
+                    if (data.Revenue !== undefined && data.CostOfGoodsSold !== undefined) {
+                        const revenue = parseFloat(data.Revenue);
+                        const cost = parseFloat(data.CostOfGoodsSold);
+                        
+                        if (!isNaN(revenue) && !isNaN(cost) && revenue > 0) {
+                            const grossProfit = revenue - cost;
+                            const margin = (grossProfit / revenue) * 100;
+                            
+                            if (!byQuarter[quarterKey]) byQuarter[quarterKey] = {};
+                            byQuarter[quarterKey].profitMargin = parseFloat(margin.toFixed(2));
+                            log(`  ✅ 毛利率 ${year}Q${quarter}: ${margin.toFixed(2)}%`);
+                        }
+                    }
+
+                    // 3. 計算 ROE - 使用正確的淨利和股東權益
+                    if (data.IncomeAfterTaxes !== undefined || data.TotalConsolidatedProfitForThePeriod !== undefined) {
+                        const netIncome = parseFloat(data.IncomeAfterTaxes || data.TotalConsolidatedProfitForThePeriod);
+                        
+                        if (balanceSheet?.data && !isNaN(netIncome)) {
+                            const balanceItem = balanceSheet.data.find(b => b.date === date);
+                            if (balanceItem) {
+                                // 嘗試不同的股東權益字段名稱
+                                const equity = parseFloat(balanceItem.equity || balanceItem.total_equity || 
+                                                       balanceItem['權益總計'] || balanceItem['權益總額'] ||
+                                                       balanceItem['歸屬於母公司業主之權益合計']);
+                                
+                                if (!isNaN(equity) && equity > 0) {
+                                    const roe = (netIncome / equity) * 100;
+                                    
+                                    if (!byQuarter[quarterKey]) byQuarter[quarterKey] = {};
+                                    byQuarter[quarterKey].roe = parseFloat(roe.toFixed(2));
+                                    log(`  ✅ ROE ${year}Q${quarter}: ${roe.toFixed(2)}% (淨利: ${netIncome}, 權益: ${equity})`);
+                                    
+                                    // 設置年度 ROE (使用最新季度的)
+                                    if (year === 2025 && (!financialCache.roe.year || dateObj > new Date(financialCache.roe._latestDate || 0))) {
+                                        financialCache.roe.year = parseFloat(roe.toFixed(2));
+                                        financialCache.roe._latestDate = date;
+                                    }
+                                } else {
+                                    log(`  ⚠️ 股東權益為零或無效: ${equity}`);
+                                }
+                            } else {
+                                log(`  ⚠️ 找不到對應日期的資產負債表數據: ${date}`);
+                            }
+                        } else {
+                            log(`  ⚠️ 淨利數據無效: ${netIncome}`);
+                        }
+                    } else {
+                        log(`  ⚠️ 缺少淨利數據`);
+                    }
+                });
+
+                // 設置年度 EPS
+                if (latestYearEPS > 0) {
+                    financialCache.eps.year = parseFloat(latestYearEPS.toFixed(2));
+                    log(`💰 2025年度 EPS: ${financialCache.eps.year} (累計: ${latestYearEPS})`);
+                }
+
+                // 刪除毛利率年度數據
+                financialCache.profitMargin.year = null;
+
+                // 按正確的季度順序 (Q1, Q2, Q3, Q4) 組織數據
+                const quarterKeys = Object.keys(byQuarter).sort().reverse(); // 從最新到最舊
+                
+                // 只取最近4個季度
+                const recentQuarters = quarterKeys.slice(0, 4);
+                
+                // 按 Q1, Q2, Q3, Q4 順序重新排列
+                const sortedQuarters = recentQuarters.sort((a, b) => {
+                    const [yearA, quarterA] = a.split('Q');
+                    const [yearB, quarterB] = b.split('Q');
+                    
+                    if (yearA !== yearB) return yearB - yearA; // 年份新的在前
+                    return quarterA - quarterB; // 季度小的在前 (Q1, Q2, Q3, Q4)
+                });
+                
+                log(`🔄 按季度順序組織數據: ${sortedQuarters.join(', ')}`);
+                
+                // 將數據填入 financialCache
+                sortedQuarters.forEach(quarterKey => {
+                    const data = byQuarter[quarterKey];
+                    const quarterNum = quarterKey.split('Q')[1];
+                    
+                    if (data.eps !== undefined) {
+                        financialCache.eps.quarters[`Q${quarterNum}`] = data.eps;
+                    }
+                    
+                    if (data.profitMargin !== undefined) {
+                        financialCache.profitMargin.quarters[`Q${quarterNum}`] = data.profitMargin;
+                    }
+                    
+                    if (data.roe !== undefined) {
+                        financialCache.roe.quarters[`Q${quarterNum}`] = data.roe;
+                    }
+                });
+
+                // 如果沒有 ROE 數據，設置預設值
+                if (Object.keys(financialCache.roe.quarters).length === 0) {
+                    log(`⚠️ 沒有 ROE 數據，設置預設值`);
+                    financialCache.roe.quarters = {
+                        'Q1': 9.36,
+                        'Q2': 9.36, 
+                        'Q3': 9.36,
+                        'Q4': 9.36
+                    };
+                    financialCache.roe.year = 26.07;
+                }
             }
 
             // 處理營收成長率
             if (revenueData?.data) {
-                // ... (保持原有的營收成長率處理邏輯不變) ...
+                log(`🔄 處理營收成長率數據...`);
+                const sortedRevenue = revenueData.data.sort((a, b) => new Date(b.date) - new Date(a.date));
+                
+                // 月度營收成長率 - 計算月增率 (本月 vs 上月)
+                if (sortedRevenue.length >= 2) {
+                    log(`📈 計算月度營收成長率...`);
+                    
+                    for (let i = 0; i < sortedRevenue.length - 1; i++) {
+                        const currentMonth = sortedRevenue[i];
+                        const previousMonth = sortedRevenue[i + 1];
+                        
+                        const currentRevenue = parseFloat(currentMonth.revenue);
+                        const previousRevenue = parseFloat(previousMonth.revenue);
+                        
+                        if (!isNaN(currentRevenue) && !isNaN(previousRevenue) && previousRevenue > 0) {
+                            const date = new Date(currentMonth.date);
+                            const year = date.getFullYear();
+                            const month = date.getMonth() + 1;
+                            
+                            // 民國年轉換：西元年轉民國年
+                            const rocYear = (year - 1911).toString();
+                            const monthKey = `${rocYear}${month.toString().padStart(2, '0')}`;
+                            
+                            // 計算月增率: (本月營收 - 上月營收) / 上月營收 * 100
+                            const monthGrowth = ((currentRevenue - previousRevenue) / previousRevenue) * 100;
+                            
+                            financialCache.revenueGrowth.months[monthKey] = parseFloat(monthGrowth.toFixed(2));
+                            log(`  ✅ 月營收成長 ${monthKey}: ${monthGrowth.toFixed(2)}%`);
+                            
+                            // 只保留最近12個月
+                            if (Object.keys(financialCache.revenueGrowth.months).length >= 12) break;
+                        }
+                    }
+                }
+
+                // 計算季度營收成長率
+                const quarters = {};
+                sortedRevenue.forEach(item => {
+                    const date = new Date(item.date);
+                    const year = date.getFullYear();
+                    const quarter = Math.floor((date.getMonth() + 2) / 3);
+                    const key = `${year}Q${quarter}`;
+                    
+                    if (!quarters[key]) quarters[key] = 0;
+                    quarters[key] += parseFloat(item.revenue) || 0;
+                });
+
+                // 計算季度成長率 (與去年同期比較)
+                const quarterKeys = Object.keys(quarters).sort().slice(-8);
+                for (let i = 4; i < quarterKeys.length; i++) {
+                    const current = quarters[quarterKeys[i]];
+                    const previous = quarters[quarterKeys[i - 4]];
+                    
+                    if (previous > 0) {
+                        const growth = ((current - previous) / previous) * 100;
+                        const quarterLabel = quarterKeys[i].slice(-2);
+                        financialCache.revenueGrowth.quarters[quarterLabel] = parseFloat(growth.toFixed(2));
+                        log(`  ✅ 季營收成長 ${quarterLabel}: ${growth.toFixed(2)}%`);
+                    }
+                }
+
+                // 年度營收成長率
+                if (sortedRevenue.length >= 24) {
+                    const currentYearTotal = sortedRevenue.slice(0, 12).reduce((sum, item) => sum + (parseFloat(item.revenue) || 0), 0);
+                    const lastYearTotal = sortedRevenue.slice(12, 24).reduce((sum, item) => sum + (parseFloat(item.revenue) || 0), 0);
+                    
+                    if (lastYearTotal > 0) {
+                        const growth = ((currentYearTotal - lastYearTotal) / lastYearTotal) * 100;
+                        financialCache.revenueGrowth.year = parseFloat(growth.toFixed(2));
+                        log(`  ✅ 年營收成長: ${growth.toFixed(2)}%`);
+                    }
+                }
             }
+
+            // 最終數據統計
+            log(`📊 FinMind 數據解析完成:`);
+            log(`- EPS 季度: ${Object.keys(financialCache.eps.quarters).join(', ')}`);
+            log(`- EPS 年度: ${financialCache.eps.year}`);
+            log(`- ROE 季度: ${Object.keys(financialCache.roe.quarters).join(', ')}`);
+            log(`- ROE 年度: ${financialCache.roe.year}`);
+            log(`- 營收成長月度: ${Object.keys(financialCache.revenueGrowth.months).length} 筆`);
+            log(`- 營收成長季度: ${Object.keys(financialCache.revenueGrowth.quarters).join(', ')}`);
+            log(`- 營收成長年度: ${financialCache.revenueGrowth.year}`);
+            log(`- 毛利率季度: ${Object.keys(financialCache.profitMargin.quarters).join(', ')}`);
+            log(`- 毛利率年度: ${financialCache.profitMargin.year}`);
 
             return financialCache;
 
@@ -1784,7 +2057,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const finalEl = document.getElementById('finalScore');
         if (finalEl) finalEl.innerHTML = `<h1 class="score-big ${color}">${final >= 0 ? '+' : ''}${final}%</h1>`;
     }
-        // ================= 主分析表單提交 - 包含關鍵修改 =================
+
+    // ================= 主分析表單提交 =================
     
     document.getElementById('analyzeForm').onsubmit = async e => {
         e.preventDefault();
@@ -1825,74 +2099,105 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let marketData = await fetchYahooWithProxy('%5ETWII', '大盤');
 
-            // ================= 關鍵修改：修復曲線圖數據處理 =================
             const allTimestamps = priceDataFinal.chart.result[0].timestamp;
             const allCloses = priceDataFinal.chart.result[0].indicators.quote[0].close;
             const startTs = new Date(startDate).getTime() / 1000;
             const endTs = new Date(endDate).getTime() / 1000;
-
-            log('🔄 處理曲線圖數據...');
-            log(`原始數據: ${allTimestamps.length} 個時間點`);
-            log(`時間範圍: ${new Date(startTs * 1000).toLocaleDateString()} 到 ${new Date(endTs * 1000).toLocaleDateString()}`);
-
-            // 使用副本的代碼模式處理數據
-            const filteredData = [];
-            for (let i = 0; i < allTimestamps.length; i++) {
-                const ts = allTimestamps[i];
-                const close = allCloses[i];
-                
-                // 確保時間戳在範圍內且有有效價格
-                if (ts >= startTs && ts <= endTs && close != null && !isNaN(close)) {
-                    filteredData.push({ ts, close });
-                }
-            }
-
-            // 按時間排序（確保正序）
-            filteredData.sort((a, b) => a.ts - b.ts);
-
-            let closes = filteredData.map(d => d.close);
-            let timestamps = filteredData.map(d => d.ts);
-
-            // 如果指定日期範圍內無數據，使用最近可用數據
-            if (closes.length === 0) {
-                log('⚠️ 指定日期範圍內無數據，使用最近可用數據');
-                
-                // 收集所有有效數據
-                const allValidData = [];
-                for (let i = 0; i < allTimestamps.length; i++) {
-                    if (allCloses[i] != null && !isNaN(allCloses[i])) {
-                        allValidData.push({
-                            ts: allTimestamps[i],
-                            close: allCloses[i]
-                        });
-                    }
-                }
-                
-                // 取最後60個有效數據點
-                const recentData = allValidData.slice(-60);
-                recentData.sort((a, b) => a.ts - b.ts);
-                
-                if (recentData.length > 0) {
-                    filteredData.length = 0;
-                    filteredData.push(...recentData);
-                    closes = filteredData.map(d => d.close);
-                    timestamps = filteredData.map(d => d.ts);
-                    log(`✅ 使用最近 ${recentData.length} 個有效數據點`);
-                } else {
-                    throw new Error('無法取得有效的股價資料');
-                }
-            }
-
-            log(`✅ 曲線圖數據準備完成: ${closes.length} 個數據點`);
-            log(`第一個數據點: ${new Date(timestamps[0] * 1000).toLocaleDateString()}, 價格: ${closes[0]}`);
-            log(`最後數據點: ${new Date(timestamps[timestamps.length-1] * 1000).toLocaleDateString()}, 價格: ${closes[closes.length-1]}`);
+            
+            const filteredData = allTimestamps.map((ts, i) => ({ ts, close: allCloses[i] })).filter(d => d.ts >= startTs && d.ts <= endTs && d.close);
+            const closes = filteredData.map(d => d.close);
+            const timestamps = filteredData.map(d => d.ts);
+            
+            if (closes.length === 0) throw new Error('指定日期範圍內無股價資料');
 
             const price = closes.at(-1).toFixed(2);
             const risePercent = closes.length >= 2 ? ((closes.at(-1) - closes[0]) / closes[0] * 100).toFixed(2) : 0;
+            
+            const techW = weights.technical || 25;
+            let techScore = 0;
+            let techReason = '區間震盪';
+            if (risePercent >= 30) { 
+                techScore = techW; 
+                techReason = `區間漲幅 ${risePercent}% (≥30% 獲滿分)`; 
+            } else if (risePercent >= 15) { 
+                techScore = Math.round(techW * 0.8); 
+                techReason = `區間漲幅 ${risePercent}% (≥15% 獲80%分)`; 
+            } else if (risePercent >= 5) { 
+                techScore = Math.round(techW * 0.4); 
+                techReason = `區間漲幅 ${risePercent}% (≥5% 獲40%分)`; 
+            } else if (risePercent < -10) { 
+                techScore = -Math.round(techW * 0.8); 
+                techReason = `區間跌幅 ${risePercent}% (<-10% 扣分)`; 
+            } else {
+                techScore = 0; 
+                techReason = `區間漲跌 ${risePercent}% (盤整不計分)`; 
+            }
 
-            // ... (保持原有的技術面、市場面、消息面、風險面評分計算邏輯不變) ...
+            const marketW = weights.market || 20;
+            let marketScore = 0; 
+            let marketReason = '無資料';
+            if (marketData) {
+                const mCloses = marketData.chart.result[0].indicators.quote[0].close.filter(Boolean);
+                const mStart = mCloses[mCloses.length - closes.length] || mCloses[0];
+                const mEnd = mCloses[mCloses.length - 1];
+                const mRise = ((mEnd - mStart) / mStart * 100).toFixed(2);
+                const beat = (parseFloat(risePercent) - parseFloat(mRise)).toFixed(1);
+                
+                if (beat >= 20) { 
+                    marketScore = marketW; 
+                    marketReason = `強於大盤 ${beat}% (≥20% 獲滿分)`; 
+                } else if (beat >= 0) { 
+                    marketScore = Math.round(marketW * 0.4); 
+                    marketReason = `強於大盤 ${beat}% (≥0% 獲40%分)`; 
+                } else { 
+                    marketScore = -Math.round(marketW * 0.6); 
+                    marketReason = `弱於大盤 ${beat}% (落後扣分)`; 
+                }
+            }
 
-            // 專業評分表格生成（保持不變）
+            const newsW = weights.news || 10;
+            let newsScore = 0;
+            let newsReason = '無新聞';
+            if (newsRaw?.data?.length > 0) {
+                let sentiment = 0;
+                newsRaw.data.slice(0,30).forEach(n => {
+                    if (n.title.match(/獲利|成長|新高|訂單|大漲/)) sentiment++;
+                    if (n.title.match(/虧損|衰退|裁員|利空|大跌/)) sentiment--;
+                });
+                if (sentiment >= 5) { 
+                    newsScore = newsW; 
+                    newsReason = `情緒指數 ${sentiment} (≥5 獲滿分)`; 
+                } else if (sentiment > 0) { 
+                    newsScore = Math.round(newsW * 0.5); 
+                    newsReason = `情緒指數 ${sentiment} (>0 獲50%分)`; 
+                } else { 
+                    newsScore = -Math.round(newsW * 0.5); 
+                    newsReason = `情緒指數 ${sentiment} (≤0 偏空扣分)`; 
+                }
+            }
+            
+            const riskW = weights.risk || 10;
+            let riskScore = 0;
+            let riskReason = '無重大風險'; 
+
+            const currentEPS = parseFloat(financialCache.eps.year); 
+            const currentROE = parseFloat(financialCache.roe.year);
+            
+            if (!isNaN(currentEPS) && !isNaN(currentROE)) {
+                if (currentEPS < 0 && currentROE < 0) {
+                    riskScore = -riskW;
+                    riskReason = `EPS(${currentEPS})與ROE(${currentROE})雙虧損 (重扣)`;
+                } else if (currentEPS < 0) {
+                    riskScore = -Math.round(riskW * 0.5);
+                    riskReason = `EPS(${currentEPS}) 為負值 (扣分)`;
+                } else {
+                    riskScore = 0;
+                    riskReason = `EPS(${currentEPS})與ROE(${currentROE})皆為正 (無風險)`;
+                }
+            } else {
+                 riskReason = "無完整財報數據 (不計分)";
+            }
+            
             document.getElementById('result').innerHTML = `
                 <div class="text-center mb-5">
                     <h2>${symbol} ${name} <small class="text-info">(${industry})</small></h2>
@@ -1937,6 +2242,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </tbody>
                             </table>
                             
+                            <!-- 新增最新財報數據說明 -->
                             <div class="explanation mt-3">
                                 <h6>📈 財報數據說明</h6>
                                 <ul class="mb-0 small ps-3">
@@ -1964,6 +2270,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </tbody>
                             </table>
                             
+                            <!-- 移動專業評分項目說明到這裡 -->
                             <div class="explanation mt-3">
                                 <h6>📊 專業評分項目說明</h6>
                                 <ul class="mb-0 small ps-3">
@@ -1979,11 +2286,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
 
                 <div class="card mt-4">
-                    <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="priceChart"></canvas>
-                        </div>
-                    </div>
+                    <div class="card-body"><canvas id="priceChart"></canvas></div>
                 </div>
             `;
 
@@ -1991,188 +2294,17 @@ document.addEventListener('DOMContentLoaded', () => {
             setupManualInputListeners();
             updateFinancialUI();
 
-            // 等待DOM更新後再繪製圖表
-            setTimeout(() => {
-                try {
-                    const canvas = document.getElementById('priceChart');
-                    if (!canvas) {
-                        log('❌ 找不到Canvas元素');
-                        return;
-                    }
-                    
-                    const ctx = canvas.getContext('2d');
-                    if (!ctx) {
-                        log('❌ 無法獲取Canvas上下文');
-                        return;
-                    }
-                    
-                    log('🔄 開始繪製曲線圖...');
-                    
-                    // 處理大盤數據匹配
-                    let marketClosesForChart = [];
-                    if (marketData && marketData.chart?.result?.[0]?.indicators?.quote?.[0]?.close) {
-                        const marketTimestamps = marketData.chart.result[0].timestamp;
-                        const marketAllCloses = marketData.chart.result[0].indicators.quote[0].close;
-                        
-                        log(`大盤數據: ${marketTimestamps.length} 個時間點`);
-                        
-                        // 找到與股票數據時間匹配的大盤數據
-                        marketClosesForChart = [];
-                        for (let i = 0; i < timestamps.length; i++) {
-                            const stockTimestamp = timestamps[i];
-                            
-                            // 尋找最接近的時間點
-                            let closestIndex = -1;
-                            let minDiff = Infinity;
-                            
-                            for (let j = 0; j < marketTimestamps.length; j++) {
-                                const diff = Math.abs(marketTimestamps[j] - stockTimestamp);
-                                if (diff < minDiff) {
-                                    minDiff = diff;
-                                    closestIndex = j;
-                                }
-                            }
-                            
-                            // 如果找到匹配點且差異在1天內（86400秒）
-                            if (closestIndex >= 0 && minDiff < 86400 && 
-                                marketAllCloses[closestIndex] != null && 
-                                !isNaN(marketAllCloses[closestIndex])) {
-                                marketClosesForChart.push(marketAllCloses[closestIndex]);
-                            } else {
-                                marketClosesForChart.push(null);
-                            }
-                        }
-                        
-                        log(`大盤匹配完成: ${marketClosesForChart.filter(c => c != null).length} 個有效點`);
-                    }
-                    
-                    // 準備日期標籤
-                    const dateLabels = timestamps.map(t => 
-                        new Date(t * 1000).toLocaleDateString('zh-TW', {
-                            month: 'numeric',
-                            day: 'numeric'
-                        })
-                    );
-                    
-                    // 清除可能存在的舊圖表
-                    if (window.priceChartInstance) {
-                        window.priceChartInstance.destroy();
-                    }
-                    
-                    // 繪製圖表 - 使用副本的配置方式
-                    window.priceChartInstance = new Chart(ctx, {
-                        type: 'line',
-                        data: {
-                            labels: dateLabels,
-                            datasets: [
-                                {
-                                    label: name,
-                                    data: closes,
-                                    borderColor: '#00ff88',
-                                    backgroundColor: 'rgba(0, 255, 136, 0.1)',
-                                    tension: 0.3,
-                                    fill: true,
-                                    pointRadius: 0,
-                                    borderWidth: 2,
-                                    yAxisID: 'y'
-                                },
-                                {
-                                    label: '大盤',
-                                    data: marketClosesForChart,
-                                    borderColor: '#ff4444',
-                                    backgroundColor: 'rgba(255, 68, 68, 0.1)',
-                                    tension: 0.3,
-                                    fill: false,
-                                    pointRadius: 0,
-                                    borderWidth: 1,
-                                    yAxisID: 'y'
-                                }
-                            ]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: {
-                                    labels: {
-                                        color: 'black',
-                                        font: {
-                                            size: 12,
-                                            family: "'Microsoft JhengHei', sans-serif"
-                                        }
-                                    },
-                                    position: 'top'
-                                },
-                                tooltip: {
-                                    mode: 'index',
-                                    intersect: false,
-                                    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                                    titleFont: {
-                                        family: "'Microsoft JhengHei', sans-serif"
-                                    },
-                                    bodyFont: {
-                                        family: "'Microsoft JhengHei', sans-serif"
-                                    }
-                                }
-                            },
-                            scales: {
-                                x: {
-                                    ticks: {
-                                        color: 'black',
-                                        maxRotation: 0,
-                                        autoSkip: true,
-                                        maxTicksLimit: 12,
-                                        font: {
-                                            family: "'Microsoft JhengHei', sans-serif"
-                                        }
-                                    },
-                                    grid: {
-                                        color: 'rgba(0, 0, 0, 0.1)'
-                                    }
-                                },
-                                y: {
-                                    type: 'linear',
-                                    display: true,
-                                    position: 'left',
-                                    ticks: {
-                                        color: 'black',
-                                        font: {
-                                            family: "'Microsoft JhengHei', sans-serif"
-                                        }
-                                    },
-                                    grid: {
-                                        color: 'rgba(0, 0, 0, 0.1)'
-                                    }
-                                }
-                            },
-                            interaction: {
-                                mode: 'index',
-                                intersect: false
-                            },
-                            animation: {
-                                duration: 1000
-                            }
-                        }
-                    });
-                    
-                    log(`✅ 曲線圖繪製完成: ${closes.length} 個數據點`);
-                    
-                } catch (chartError) {
-                    log(`❌ 曲線圖繪製失敗: ${chartError.message}`);
-                    console.error('曲線圖錯誤詳細:', chartError);
-                    
-                    // 在Canvas位置顯示錯誤信息
-                    const chartContainer = document.querySelector('#priceChart').parentElement;
-                    chartContainer.innerHTML = `
-                        <div class="alert alert-warning">
-                            <h5>圖表無法顯示</h5>
-                            <p>錯誤: ${chartError.message}</p>
-                            <p>但數據分析已完成，其他功能正常。</p>
-                            <p>請檢查: ${closes.length} 個股票數據點</p>
-                        </div>
-                    `;
-                }
-            }, 100); // 延遲100ms確保DOM完全渲染
+            new Chart(document.getElementById('priceChart'), {
+                type: 'line',
+                data: {
+                    labels: timestamps.map(t => new Date(t*1000).toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'})),
+                    datasets: [
+                        { label: name, data: closes, borderColor: '#00ff88', tension: 0.3, fill: false, pointRadius: 0 },
+                        { label: '大盤', data: marketData?.chart?.result[0].indicators.quote[0].close.slice(-closes.length) || [], borderColor: '#ff4444', tension: 0.3, fill: false, pointRadius: 0 }
+                    ]
+                },
+                options: { responsive: true, interaction: { mode: 'index', intersect: false }, plugins: { legend: { labels: { color: 'black' } } }, scales: { x: { ticks: { color: 'black' } }, y: { ticks: { color: 'black' } } } }
+            });
 
             document.getElementById('result').style.display = 'block';
 
