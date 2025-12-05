@@ -1100,26 +1100,34 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-    async function fetchYahooWithProxy(symbol, logName) {
-        log(`${logName} 請求中 (透過 Netlify Price Function 代理)...`);
-        try {
-            const response = await fetch(`/.netlify/functions/fetch-price?id=${symbol}`);
-            if (!response.ok) {
-                log(`${logName} 代理失敗: ${response.status}`);
-                return null;
-            }
-            const data = await response.json(); 
-            if (data && data.chart?.result?.[0]) {
-                log(`${logName} 成功！`);
-                return data;
-            }
-            log(`${logName} 失敗: 格式錯誤`);
-            return null;
-        } catch (err) {
-            log(`${logName} 失敗: ${err.message}`);
+async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
+    log(`${logName} 請求中 (透過 Netlify Price Function 代理)...`);
+    try {
+        // 構建請求URL，包含市場類型參數
+        let url = `/.netlify/functions/fetch-price?id=${symbol}`;
+        
+        // 如果是純數字股票代碼，添加市場類型參數
+        if (/^\d+$/.test(symbol)) {
+            url += `&market=${marketType}`;
+        }
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+            log(`${logName} 代理失敗: ${response.status}`);
             return null;
         }
+        const data = await response.json(); 
+        if (data && data.chart?.result?.[0]) {
+            log(`${logName} 成功！`);
+            return data;
+        }
+        log(`${logName} 失敗: 格式錯誤`);
+        return null;
+    } catch (err) {
+        log(`${logName} 失敗: ${err.message}`);
+        return null;
     }
+}
 
     async function fetchTWSEPrice(stockId) {
         try {
@@ -2143,63 +2151,81 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ================= 主分析表單提交 =================
     
-    document.getElementById('analyzeForm').onsubmit = async e => {
-        e.preventDefault();
-        const symbol = document.getElementById('stockSelect').value.trim();
-        if (!symbol) { alert('請選擇股票'); return; }
-        
-        const startDate = document.getElementById('startDate').value;
-        const endDate = document.getElementById('endDate').value;
-        
-        log(`=== 分析開始：${symbol} ===`);
-        document.getElementById('loading').style.display = 'block';
-        document.getElementById('result').style.display = 'none';
-        document.getElementById('logContent').textContent = '';
+document.getElementById('analyzeForm').onsubmit = async e => {
+    e.preventDefault();
+    const symbol = document.getElementById('stockSelect').value.trim();
+    if (!symbol) { alert('請選擇股票'); return; }
+    
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    
+    log(`=== 分析開始：${symbol} ===`);
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('result').style.display = 'none';
+    document.getElementById('logContent').textContent = '';
 
-        try {
-            let name = symbol;
-            let industry = '未知';
-            let marketLabel = '';
-            
-            if (stockData.length > 0) {
-                const stock = stockData.find(s => s.stock_id === symbol);
-                if (stock) { 
-                    name = stock.stock_name; 
-                    industry = stock.industry_category; 
-                    if (stock.market_type === 'TPEx') {
-                        marketLabel = ' (興櫃)';
-                    }
+    try {
+        let name = symbol;
+        let industry = '未知';
+        let marketLabel = '';
+        let marketType = 'TWSE'; // 默認市場類型
+        
+        if (stockData.length > 0) {
+            const stock = stockData.find(s => s.stock_id === symbol);
+            if (stock) { 
+                name = stock.stock_name; 
+                industry = stock.industry_category; 
+                if (stock.market_type === 'TPEx') {
+                    marketLabel = ' (興櫃)';
+                    marketType = 'TPEx';
                 }
             }
+        }
 
-            let priceDataFinal = await fetchYahooWithProxy(`${symbol}.TW`, '股價');
-            if (!priceDataFinal) { 
+        // 修改這裡：傳遞市場類型給股價獲取函數
+        let priceDataFinal = await fetchYahooWithProxy(`${symbol}`, '股價', marketType);
+        
+        if (!priceDataFinal) { 
+            // 備援方案：嘗試證交所API（僅限上市公司）
+            if (marketType === 'TWSE') {
+                log('嘗試從證交所獲取股價數據...');
                 const twsePrice = await fetchTWSEPrice(symbol);
                 if (twsePrice) {
-                     priceDataFinal = { chart: { result: [{ timestamp: twsePrice.map(d => { const p=d.Date.split('/'); return new Date(`${+p[0]+1911}-${p[1]}-${p[2]}`).getTime()/1000; }), indicators: { quote: [{ close: twsePrice.map(d => parseFloat(d.Close.replace(/,/g, ''))) }] } }] } };
+                    priceDataFinal = { chart: { result: [{ 
+                        timestamp: twsePrice.map(d => { 
+                            const p = d.Date.split('/'); 
+                            return new Date(`${+p[0]+1911}-${p[1]}-${p[2]}`).getTime()/1000; 
+                        }), 
+                        indicators: { quote: [{ 
+                            close: twsePrice.map(d => parseFloat(d.Close.replace(/,/g, ''))) 
+                        }] } 
+                    }] } };
                 }
             }
-            if (!priceDataFinal) throw new Error('無法取得股價資料，請稍後再試');
+        }
+        
+        if (!priceDataFinal) throw new Error('無法取得股價資料，請稍後再試');
 
-            // 使用新的財務數據獲取函數
-            const financialResult = await fetchFinancialData(symbol);
-            const finSource = financialResult?.source || '無';
-            
-            let newsRaw = null;
-            if (TOKEN) newsRaw = await fetchFinmind('TaiwanStockNews', symbol, startDate);
+        // 使用新的財務數據獲取函數
+        const financialResult = await fetchFinancialData(symbol);
+        const finSource = financialResult?.source || '無';
+        
+        let newsRaw = null;
+        if (TOKEN) newsRaw = await fetchFinmind('TaiwanStockNews', symbol, startDate);
 
-            let marketData = await fetchYahooWithProxy('%5ETWII', '大盤');
+        // 修改這裡：大盤數據也需要正確的市場類型
+        let marketData = await fetchYahooWithProxy('%5ETWII', '大盤', 'TWSE');
 
-            const allTimestamps = priceDataFinal.chart.result[0].timestamp;
-            const allCloses = priceDataFinal.chart.result[0].indicators.quote[0].close;
-            const startTs = new Date(startDate).getTime() / 1000;
-            const endTs = new Date(endDate).getTime() / 1000;
-            
-            const filteredData = allTimestamps.map((ts, i) => ({ ts, close: allCloses[i] })).filter(d => d.ts >= startTs && d.ts <= endTs && d.close);
-            const closes = filteredData.map(d => d.close);
-            const timestamps = filteredData.map(d => d.ts);
-            
-            if (closes.length === 0) throw new Error('指定日期範圍內無股價資料');
+        const allTimestamps = priceDataFinal.chart.result[0].timestamp;
+        const allCloses = priceDataFinal.chart.result[0].indicators.quote[0].close;
+        const startTs = new Date(startDate).getTime() / 1000;
+        const endTs = new Date(endDate).getTime() / 1000;
+        
+        const filteredData = allTimestamps.map((ts, i) => ({ ts, close: allCloses[i] })).filter(d => d.ts >= startTs && d.ts <= endTs && d.close);
+        const closes = filteredData.map(d => d.close);
+        const timestamps = filteredData.map(d => d.ts);
+        
+        if (closes.length === 0) throw new Error('指定日期範圍內無股價資料');
 
             const price = closes.at(-1).toFixed(2);
             const risePercent = closes.length >= 2 ? ((closes.at(-1) - closes[0]) / closes[0] * 100).toFixed(2) : 0;
