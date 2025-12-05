@@ -38,6 +38,14 @@
         .ai-analysis-content { margin-top: 15px; }
         .chart-container { margin: 20px 0; padding: 15px; background: rgba(255,255,255,0.9); border-radius: 10px; }
         .data-section { margin: 15px 0; padding: 10px; }
+        
+        /* 公司类型选择样式 */
+        .company-type-badge { font-size: 0.75rem; padding: 2px 6px; }
+        .company-type-select { width: 120px; }
+        .detected-type { margin-left: 8px; font-size: 0.85rem; }
+        .type-listed { color: #28a745; }
+        .type-emerging { color: #ffc107; }
+        .type-unknown { color: #6c757d; }
     </style>
 </head>
 <body>
@@ -62,37 +70,46 @@
 </div>
 
     <div class="row justify-content-center mb-4">
-        <div class="col-md-8">
+        <div class="col-md-10">
             <div class="row g-2 mb-3">
+                <!-- 公司类型选择 -->
                 <div class="col-md-3">
-                    <label class="form-label text-white-50">選擇市場</label>
-                    <select id="marketType" class="form-select">
-                        <option value="all">全部市場</option>
-                        <option value="TWSE">上市公司</option>
-                        <option value="TPEx">興櫃公司</option>
+                    <label class="form-label text-white-50">公司类型</label>
+                    <select id="companyType" class="form-select company-type-select">
+                        <option value="auto">自动检测</option>
+                        <option value="listed">上市公司</option>
+                        <option value="emerging">興櫃公司</option>
                     </select>
+                    <div id="detectedTypeDisplay" class="detected-type mt-1"></div>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label text-white-50">手動搜尋</label>
+                
+                <!-- 手動輸入股票代碼或名稱 -->
+                <div class="col-md-4">
+                    <label class="form-label text-white-50">手動輸入股票代碼或名稱</label>
                     <div class="input-group stock-search">
-                        <input type="text" id="manualStockCode" class="form-control" placeholder="代碼或名稱">
+                        <input type="text" id="manualStockCode" class="form-control" placeholder="例如: 2330">
                         <button class="btn btn-info text-white fw-bold" id="searchStock">搜尋</button>
                     </div>
                 </div>
+                
+                <!-- 選擇類股 (僅上市公司可用) -->
                 <div class="col-md-3">
                     <label class="form-label text-white-50">選擇類股</label>
                     <select id="stockCategory" class="form-select">
                         <option value="all">全部類股</option>
                     </select>
                 </div>
-                <div class="col-md-3">
+                
+                <!-- 選擇股票 -->
+                <div class="col-md-2">
                     <label class="form-label text-white-50">選擇股票</label>
                     <select id="stockSelect" class="form-select" required>
-                        <option value="">請先選擇市場</option>
+                        <option value="">請先選擇類型</option>
                     </select>
                 </div>
             </div>
             
+            <!-- 分析時間範圍表單 -->
             <form id="analyzeForm">
                 <div class="row g-2">
                     <div class="col-auto">
@@ -124,6 +141,11 @@
                     </div>
                 </div>
             </form>
+            
+            <!-- 數據來源顯示 -->
+            <div id="dataSourceInfo" class="mt-2">
+                <small class="text-white-50">數據來源: <span id="currentDataSource">準備中...</span></small>
+            </div>
         </div>
     </div>
 
@@ -342,7 +364,7 @@
 
 </div>
 
-<footer>© 2025 Joseph PAI. All Rights Reserved. | 資料來源：台灣證券交易所 + 櫃買中心(興櫃) + FinMind + Yahoo Finance</footer>
+<footer>© 2025 Joseph PAI. All Rights Reserved. | 資料來源：台灣證券交易所 (TWSE) + 證券櫃檯買賣中心 (TPEx) + FinMind + Yahoo Finance</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
@@ -359,6 +381,14 @@ document.addEventListener('DOMContentLoaded', () => {
         profitMargin: { quarters: {}, year: null }
     };
 
+    // 公司類型與股票數據
+    let currentCompanyType = 'auto'; // auto, listed, emerging
+    let detectedCompanyType = null; // listed, emerging, null
+    let stockData = {
+        listed: [],    // 上市公司數據
+        emerging: []   // 興櫃公司數據（稍後填充）
+    };
+
     const twseIndustryMap = {
         "01": "水泥工業", "02": "食品工業", "03": "塑膠工業", "04": "紡織纖維", "05": "電機機械",
         "06": "電器電纜", "07": "化學生技醫療", "08": "玻璃陶瓷", "09": "造紙工業", "10": "鋼鐵工業",
@@ -370,23 +400,83 @@ document.addEventListener('DOMContentLoaded', () => {
         "35": "綠能環保", "36": "數位雲端", "37": "運動休閒", "38": "居家生活", "91": "存託憑證"
     };
 
-    // 新增：興櫃市場類股映射
-    const tpexIndustryMap = {
-        "00": "其他", "01": "水泥工業", "02": "食品工業", "03": "塑膠工業", "04": "紡織纖維",
-        "05": "電機機械", "06": "電器電纜", "07": "化學生技醫療", "08": "玻璃陶瓷", "09": "造紙工業",
-        "10": "鋼鐵工業", "11": "橡膠工業", "12": "汽車工業", "13": "電子工業", "14": "建材營造",
-        "15": "航運業", "16": "觀光事業", "17": "金融保險", "18": "貿易百貨", "19": "綜合",
-        "20": "其他", "21": "化學工業", "22": "生技醫療業", "23": "油電燃氣業", "24": "半導體業",
-        "25": "電腦及週邊設備業", "26": "光電業", "27": "通信網路業", "28": "電子零組件業",
-        "29": "電子通路業", "30": "資訊服務業", "31": "其他電子業", "32": "文化創意業",
-        "33": "農業科技業", "34": "電子商務業", "35": "綠能環保", "36": "數位雲端",
-        "37": "運動休閒", "38": "居家生活"
+    // ================= 分析歷史管理 =================
+    let analysisHistory = {
+        news: null,
+        risk: null
     };
 
-    // 新增：當前市場類型
-    let currentMarketType = 'all'; // all, TWSE, TPEx
-    let allStockData = []; // 存儲所有市場的股票數據
-    let stockData = [];
+    // 新增：並行分析狀態管理
+    let parallelAnalysisState = {
+        news: { status: 'idle', result: null },
+        risk: { status: 'idle', result: null }
+    };
+
+    // 保存分析歷史
+    function saveAnalysisHistory(analysisType, result, stockName) {
+        analysisHistory[analysisType] = {
+            content: result.content,
+            score: result.score,
+            comment: result.comment,
+            timestamp: new Date().toLocaleString('zh-TW', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            }),
+            stockName: stockName,
+            rawContent: result.rawContent || result.content,
+            positives: result.positives || [],
+            negatives: result.negatives || []
+        };
+        console.log(`已保存 ${analysisType} 分析歷史`);
+    }
+
+    // 加載保存的分析歷史
+    function loadAnalysisHistory(analysisType) {
+        const history = analysisHistory[analysisType];
+        if (history) {
+            // 更新對應的分析結果顯示
+            if (analysisType === 'news') {
+                document.getElementById('newsAnalysisContent').textContent = history.content;
+                document.getElementById('newsScoreDisplay').textContent = 
+                    history.score > 0 ? `+${history.score}` : history.score;
+                document.getElementById('newsComment').textContent = history.comment;
+                updateScoreDisplay(history.score, 'news', 'news');
+            } else {
+                document.getElementById('riskAnalysisContent').textContent = history.content;
+                document.getElementById('riskScoreDisplay').textContent = 
+                    history.score > 0 ? `+${history.score}` : history.score;
+                document.getElementById('riskComment').textContent = history.comment;
+                updateScoreDisplay(history.score, 'risk', 'risk');
+            }
+            
+            console.log(`已載入 ${analysisType} 分析歷史`);
+            return true;
+        }
+        return false;
+    }
+
+    // UI 初始化
+    document.getElementById('tokenInput').value = TOKEN;
+    document.getElementById('tokenStatus').innerHTML = TOKEN ? '<span style="color:#28a745">Token 已從記錄中載入 (下次免輸入)</span>' : '<span style="color:#ffc107">未設定 Token，將使用公開資料</span>';
+    
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('endDate').value = today;
+    
+    const dateRangeEl = document.getElementById('dateRange');
+    dateRangeEl.onchange = function() {
+        const days = parseInt(this.value);
+        const end = new Date();
+        const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+        document.getElementById('startDate').value = start.toISOString().split('T')[0];
+        document.getElementById('endDate').value = today;
+    };
+    dateRangeEl.dispatchEvent(new Event('change'));
+
     let industryCategories = new Set();
     window.weights = { basic:35, technical:25, market:20, news:10, risk:10 };
 
@@ -398,6 +488,159 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         console.log(msg);
     }
+
+    // ================= 公司類型處理函數 =================
+    
+    // 更新公司類型顯示
+    function updateCompanyTypeDisplay(type, name = '') {
+        const displayEl = document.getElementById('detectedTypeDisplay');
+        let displayText = '';
+        let className = '';
+        
+        if (type === 'listed') {
+            displayText = `✅ 上市公司${name ? ': ' + name : ''}`;
+            className = 'type-listed';
+        } else if (type === 'emerging') {
+            displayText = `⚠️ 興櫃公司${name ? ': ' + name : ''}`;
+            className = 'type-emerging';
+        } else if (type === 'unknown') {
+            displayText = '❓ 未知公司類型';
+            className = 'type-unknown';
+        } else if (type === 'detecting') {
+            displayText = '🔄 檢測中...';
+            className = 'type-unknown';
+        }
+        
+        displayEl.innerHTML = `<span class="${className}">${displayText}</span>`;
+    }
+    
+    // 檢測公司類型
+    async function detectCompanyType(stockCode) {
+        if (!stockCode || stockCode.trim() === '') {
+            updateCompanyTypeDisplay('unknown');
+            return null;
+        }
+        
+        updateCompanyTypeDisplay('detecting');
+        
+        try {
+            log(`開始檢測公司類型: ${stockCode}`);
+            
+            const response = await fetch('/.netlify/functions/check-company-type', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    stock_code: stockCode.trim()
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`API錯誤: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                log(`檢測失敗: ${result.error}`);
+                updateCompanyTypeDisplay('unknown');
+                return null;
+            }
+            
+            log(`檢測結果: ${result.type} - ${result.stock_name}`);
+            
+            // 更新顯示
+            detectedCompanyType = result.type;
+            updateCompanyTypeDisplay(result.type, result.stock_name);
+            
+            // 如果用戶選擇自動檢測，更新選擇框
+            if (currentCompanyType === 'auto' && result.type !== 'not_found') {
+                document.getElementById('companyType').value = result.type;
+                currentCompanyType = result.type;
+            }
+            
+            // 如果找到公司，填充股票選擇框
+            if (result.type !== 'not_found') {
+                // 清除之前的選擇
+                document.getElementById('stockSelect').innerHTML = '';
+                
+                // 添加找到的股票
+                const option = document.createElement('option');
+                option.value = result.stock_code || stockCode;
+                option.textContent = `${result.stock_code || stockCode} ${result.stock_name}`;
+                document.getElementById('stockSelect').appendChild(option);
+                document.getElementById('stockSelect').value = option.value;
+                
+                // 更新數據來源顯示
+                updateDataSourceInfo(result.type, result.source);
+            }
+            
+            return result;
+            
+        } catch (error) {
+            log(`檢測公司類型錯誤: ${error.message}`);
+            updateCompanyTypeDisplay('unknown');
+            return null;
+        }
+    }
+    
+    // 更新數據來源信息
+    function updateDataSourceInfo(companyType, source) {
+        const sourceEl = document.getElementById('currentDataSource');
+        let sourceText = '';
+        
+        if (companyType === 'listed') {
+            if (TOKEN) {
+                sourceText = 'FinMind + TWSE台灣證券交易所';
+            } else {
+                sourceText = 'TWSE台灣證券交易所 (公開資料)';
+            }
+        } else if (companyType === 'emerging') {
+            sourceText = 'TPEx證券櫃檯買賣中心';
+        } else {
+            sourceText = '準備中...';
+        }
+        
+        if (source) {
+            sourceText += ` (${source})`;
+        }
+        
+        sourceEl.textContent = sourceText;
+    }
+    
+    // 公司類型選擇變化處理
+    document.getElementById('companyType').addEventListener('change', function() {
+        currentCompanyType = this.value;
+        log(`公司類型變更為: ${this.value}`);
+        
+        // 根據類型更新UI
+        if (this.value === 'listed') {
+            // 上市公司：顯示類股選擇
+            document.getElementById('stockCategory').disabled = false;
+            document.getElementById('stockCategory').style.opacity = '1';
+            loadListedStockData();
+        } else if (this.value === 'emerging') {
+            // 興櫃公司：隱藏類股選擇
+            document.getElementById('stockCategory').disabled = true;
+            document.getElementById('stockCategory').style.opacity = '0.5';
+            // 這裡可以加載興櫃公司列表（如果需要）
+            document.getElementById('stockSelect').innerHTML = '<option value="">請輸入興櫃公司代碼</option>';
+        } else {
+            // 自動檢測：重置
+            document.getElementById('stockCategory').disabled = false;
+            document.getElementById('stockCategory').style.opacity = '1';
+            updateCompanyTypeDisplay('unknown');
+            detectedCompanyType = null;
+        }
+        
+        // 清除當前的股票選擇
+        document.getElementById('stockSelect').value = '';
+        document.getElementById('stockSelect').innerHTML = '<option value="">請先選擇或輸入股票</option>';
+        
+        // 更新數據來源顯示
+        updateDataSourceInfo(this.value === 'auto' ? null : this.value);
+    });
 
      // ================= AI 分析功能增強 =================
     
@@ -733,7 +976,13 @@ document.addEventListener('DOMContentLoaded', () => {
         let stockName = selectedOption.textContent.replace(/^\d+\s/, '');
         
         if (!stockName || stockName === symbol) {
-            const stockInfo = stockData.find(s => s.stock_id === symbol);
+            // 根據公司類型查找股票信息
+            let stockInfo;
+            if (currentCompanyType === 'listed' || detectedCompanyType === 'listed') {
+                stockInfo = stockData.listed.find(s => s.stock_id === symbol);
+            } else if (currentCompanyType === 'emerging' || detectedCompanyType === 'emerging') {
+                stockInfo = stockData.emerging.find(s => s.stock_id === symbol);
+            }
             stockName = stockInfo ? stockInfo.stock_name : symbol;
         }
 
@@ -828,7 +1077,13 @@ document.addEventListener('DOMContentLoaded', () => {
         let stockName = selectedOption.textContent.replace(/^\d+\s/, '');
         
         if (!stockName || stockName === symbol) {
-            const stockInfo = stockData.find(s => s.stock_id === symbol);
+            // 根據公司類型查找股票信息
+            let stockInfo;
+            if (currentCompanyType === 'listed' || detectedCompanyType === 'listed') {
+                stockInfo = stockData.listed.find(s => s.stock_id === symbol);
+            } else if (currentCompanyType === 'emerging' || detectedCompanyType === 'emerging') {
+                stockInfo = stockData.emerging.find(s => s.stock_id === symbol);
+            }
             stockName = stockInfo ? stockInfo.stock_name : symbol;
         }
 
@@ -1100,34 +1355,26 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
-    log(`${logName} 請求中 (透過 Netlify Price Function 代理)...`);
-    try {
-        // 構建請求URL，包含市場類型參數
-        let url = `/.netlify/functions/fetch-price?id=${symbol}`;
-        
-        // 如果是純數字股票代碼，添加市場類型參數
-        if (/^\d+$/.test(symbol)) {
-            url += `&market=${marketType}`;
-        }
-        
-        const response = await fetch(url);
-        if (!response.ok) {
-            log(`${logName} 代理失敗: ${response.status}`);
+    async function fetchYahooWithProxy(symbol, logName) {
+        log(`${logName} 請求中 (透過 Netlify Price Function 代理)...`);
+        try {
+            const response = await fetch(`/.netlify/functions/fetch-price?id=${symbol}`);
+            if (!response.ok) {
+                log(`${logName} 代理失敗: ${response.status}`);
+                return null;
+            }
+            const data = await response.json(); 
+            if (data && data.chart?.result?.[0]) {
+                log(`${logName} 成功！`);
+                return data;
+            }
+            log(`${logName} 失敗: 格式錯誤`);
+            return null;
+        } catch (err) {
+            log(`${logName} 失敗: ${err.message}`);
             return null;
         }
-        const data = await response.json(); 
-        if (data && data.chart?.result?.[0]) {
-            log(`${logName} 成功！`);
-            return data;
-        }
-        log(`${logName} 失敗: 格式錯誤`);
-        return null;
-    } catch (err) {
-        log(`${logName} 失敗: ${err.message}`);
-        return null;
     }
-}
 
     async function fetchTWSEPrice(stockId) {
         try {
@@ -1138,10 +1385,26 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
         } catch (err) { return null; }
     }
 
-    // ================= 財務數據獲取 - 增加市場判斷 =================
+    // ================= 增強版財務數據獲取 =================
     
     async function fetchFinancialData(stockId) {
         log(`開始獲取財務數據: ${stockId}`);
+        
+        // 決定公司類型
+        let companyType;
+        if (currentCompanyType === 'auto') {
+            // 自動檢測：使用檢測到的類型或重新檢測
+            if (detectedCompanyType) {
+                companyType = detectedCompanyType;
+            } else {
+                const detectionResult = await detectCompanyType(stockId);
+                companyType = detectionResult ? detectionResult.type : 'listed'; // 默認上市公司
+            }
+        } else {
+            companyType = currentCompanyType;
+        }
+        
+        log(`確定公司類型: ${companyType}, 股票: ${stockId}`);
         
         // 重置財務快取
         financialCache = {
@@ -1153,35 +1416,15 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
         
         let source = 'Unknown';
         
-        // 首先判斷該股票的市場類型
-        const stockSelect = document.getElementById('stockSelect');
-        const selectedOption = stockSelect.options[stockSelect.selectedIndex];
-        const marketType = selectedOption?.dataset?.marketType || 'TWSE';
-        
-        log(`股票 ${stockId} 市場類型: ${marketType}`);
-        
-        // 根據市場類型選擇數據源
-        if (marketType === 'TPEx') {
-            // 興櫃公司：使用TPEx API
-            log('使用TPEx API獲取興櫃公司財務數據...');
-            const tpexData = await fetchTPExFinancials(stockId);
-            if (tpexData) {
-                source = 'TPEx';
-                log('✅ TPEx 財務數據載入成功');
-                return { source, data: tpexData };
-            }
-        } else {
-            // 上市公司：使用原有邏輯
-            log('使用上市公司財務數據獲取邏輯...');
-            
-            // 1. 優先從 FinMind 獲取數據
+        if (companyType === 'listed') {
+            // 1. 優先從 FinMind 獲取上市公司數據
             if (TOKEN) {
-                log('嘗試從 FinMind 獲取財務數據...');
+                log('嘗試從 FinMind 獲取上市公司財務數據...');
                 const finmindData = await fetchFinmindFinancials(stockId);
                 if (finmindData) {
-                    source = 'FinMind';
-                    log('✅ FinMind 財務數據載入成功');
-                    return { source, data: finmindData };
+                    source = 'FinMind (上市公司)';
+                    log('✅ FinMind 上市公司財務數據載入成功');
+                    return { source, data: finmindData, companyType: 'listed' };
                 }
             }
             
@@ -1189,79 +1432,55 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
             log('FinMind 失敗，嘗試證交所財報...');
             const twseData = await fetchTWSEFinancials(stockId);
             if (twseData) {
-                source = 'TWSE';
+                source = 'TWSE (上市公司)';
                 log('✅ 證交所財務數據載入成功');
-                return { source, data: twseData };
+                return { source, data: twseData, companyType: 'listed' };
             }
             
             // 3. 最終備援：Yahoo Finance
             log('證交所失敗，嘗試 Yahoo Finance...');
             const yahooData = await fetchYahooFinanceFinancials(stockId);
             if (yahooData) {
-                source = 'Yahoo Finance';
+                source = 'Yahoo Finance (上市公司)';
                 log('✅ Yahoo Finance 財務數據載入成功');
-                return { source, data: yahooData };
+                return { source, data: yahooData, companyType: 'listed' };
+            }
+            
+        } else if (companyType === 'emerging') {
+            // 興櫃公司：使用 TPEx API
+            log('嘗試從 TPEx 獲取興櫃公司財務數據...');
+            const tpexData = await fetchTPExFinancials(stockId);
+            if (tpexData) {
+                source = 'TPEx (興櫃公司)';
+                log('✅ TPEx 興櫃公司財務數據載入成功');
+                return { source, data: tpexData, companyType: 'emerging' };
+            }
+            
+            // 興櫃公司備援：使用 Yahoo Finance (.TWO)
+            log('TPEx 失敗，嘗試 Yahoo Finance (.TWO)...');
+            const yahooData = await fetchYahooFinanceFinancials(`${stockId}.TWO`);
+            if (yahooData) {
+                source = 'Yahoo Finance (興櫃公司)';
+                log('✅ Yahoo Finance 興櫃公司財務數據載入成功');
+                return { source, data: yahooData, companyType: 'emerging' };
             }
         }
         
-        log('❌ 所有財務數據來源都失敗');
+        log(`❌ ${companyType === 'listed' ? '上市公司' : '興櫃公司'} 所有財務數據來源都失敗`);
         return null;
     }
 
-    // 新增：TPEx 財務數據獲取函數
-    async function fetchTPExFinancials(stockId) {
-        try {
-            log(`🔍 TPEx 數據獲取開始: ${stockId}`);
-            
-            const response = await fetch(`/.netlify/functions/fetch-tpex?type=financials&stock_id=${stockId}`);
-            
-            if (!response.ok) {
-                log(`TPEx 代理請求失敗: ${response.status}`);
-                return null;
-            }
-            
-            const structuredData = await response.json();
-            
-            if (structuredData.error) {
-                log(`TPEx 數據錯誤: ${structuredData.error}`);
-                return null;
-            }
-            
-            // 檢查數據結構並轉換
-            financialCache = structuredData;
-            
-            log(`✅ TPEx 結構化數據載入成功`);
-            log(`- EPS 季度: ${Object.keys(financialCache.eps.quarters).join(', ')}`);
-            log(`- EPS 年度: ${financialCache.eps.year}`);
-            log(`- ROE 季度: ${Object.keys(financialCache.roe.quarters).join(', ')}`);
-            log(`- ROE 年度: ${financialCache.roe.year}`);
-            log(`- 營收成長月度: ${Object.keys(financialCache.revenueGrowth.months).length} 筆`);
-            log(`- 營收成長季度: ${Object.keys(financialCache.revenueGrowth.quarters).join(', ')}`);
-            log(`- 營收成長年度: ${financialCache.revenueGrowth.year}`);
-            log(`- 毛利率季度: ${Object.keys(financialCache.profitMargin.quarters).join(', ')}`);
-            log(`- 毛利率年度: ${financialCache.profitMargin.year}`);
-            
-            return financialCache;
-            
-        } catch (error) {
-            log(`❌ TPEx 財務數據獲取失敗: ${error.message}`);
-            console.error(error);
-            return null;
-        }
-    }
-
+    // 上市公司財務數據獲取（保持原有邏輯）
     async function fetchFinmindFinancials(stockId) {
         try {
             log(`🔍 FinMind 數據獲取開始: ${stockId}`);
             
-            // 使用正確的數據集 - 財務報表包含 EPS 和毛利率數據
             const [financialStatement, balanceSheet, revenueData] = await Promise.all([
                 fetchFinmind('TaiwanStockFinancialStatements', stockId, '2020-01-01'),
                 fetchFinmind('TaiwanStockBalanceSheet', stockId, '2020-01-01'),
                 fetchFinmind('TaiwanStockMonthRevenue', stockId, '2020-01-01')
             ]);
 
-            // 詳細的數據檢查日誌
             log(`📊 FinMind 數據檢查:`);
             log(`- 財務報表筆數: ${financialStatement?.data?.length || 0}`);
             log(`- 資產負債表筆數: ${balanceSheet?.data?.length || 0}`);
@@ -1272,11 +1491,10 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
                 return null;
             }
 
-            // 處理財務報表數據 - 按日期和類型重組
+            // 處理財務報表數據
             if (financialStatement?.data) {
                 log(`🔄 重組財務報表數據...`);
                 
-                // 按日期分組數據
                 const byDate = {};
                 financialStatement.data.forEach(item => {
                     if (!byDate[item.date]) byDate[item.date] = {};
@@ -1285,13 +1503,11 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
                     byDate[item.date]['_origin'][item.type] = item.origin_name;
                 });
 
-                // 按季度分組數據（確保 Q1-Q4 順序）
                 const byQuarter = {};
                 let latestYearEPS = 0;
                 let latestYearDate = '';
                 
-                // 處理每個日期的數據
-                const dates = Object.keys(byDate).sort().reverse(); // 從最新到最舊
+                const dates = Object.keys(byDate).sort().reverse();
                 
                 dates.forEach(date => {
                     const data = byDate[date];
@@ -1301,9 +1517,7 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
                     const quarter = Math.floor((month + 2) / 3);
                     const quarterKey = `${year}Q${quarter}`;
                     
-                    log(`📅 處理 ${date} (${year}Q${quarter}) 數據:`);
-
-                    // 1. 處理 EPS 數據
+                    // 處理 EPS 數據
                     if (data.EPS !== undefined) {
                         const eps = parseFloat(data.EPS);
                         if (!isNaN(eps)) {
@@ -1313,17 +1527,14 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
                             byQuarter[quarterKey].year = year;
                             byQuarter[quarterKey].quarter = quarter;
                             
-                            log(`  ✅ EPS ${year}Q${quarter}: ${eps}`);
-                            
-                            // 計算年度 EPS (累計最近4個季度)
-                            if (year === 2025) { // 只計算2025年度的EPS
+                            if (year === 2025) {
                                 latestYearEPS += eps;
                                 latestYearDate = date;
                             }
                         }
                     }
 
-                    // 2. 計算毛利率
+                    // 計算毛利率
                     if (data.Revenue !== undefined && data.CostOfGoodsSold !== undefined) {
                         const revenue = parseFloat(data.Revenue);
                         const cost = parseFloat(data.CostOfGoodsSold);
@@ -1334,18 +1545,16 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
                             
                             if (!byQuarter[quarterKey]) byQuarter[quarterKey] = {};
                             byQuarter[quarterKey].profitMargin = parseFloat(margin.toFixed(2));
-                            log(`  ✅ 毛利率 ${year}Q${quarter}: ${margin.toFixed(2)}%`);
                         }
                     }
 
-                    // 3. 計算 ROE - 使用正確的淨利和股東權益
+                    // 計算 ROE
                     if (data.IncomeAfterTaxes !== undefined || data.TotalConsolidatedProfitForThePeriod !== undefined) {
                         const netIncome = parseFloat(data.IncomeAfterTaxes || data.TotalConsolidatedProfitForThePeriod);
                         
                         if (balanceSheet?.data && !isNaN(netIncome)) {
                             const balanceItem = balanceSheet.data.find(b => b.date === date);
                             if (balanceItem) {
-                                // 嘗試不同的股東權益字段名稱
                                 const equity = parseFloat(balanceItem.equity || balanceItem.total_equity || 
                                                        balanceItem['權益總計'] || balanceItem['權益總額'] ||
                                                        balanceItem['歸屬於母公司業主之權益合計']);
@@ -1355,54 +1564,32 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
                                     
                                     if (!byQuarter[quarterKey]) byQuarter[quarterKey] = {};
                                     byQuarter[quarterKey].roe = parseFloat(roe.toFixed(2));
-                                    log(`  ✅ ROE ${year}Q${quarter}: ${roe.toFixed(2)}% (淨利: ${netIncome}, 權益: ${equity})`);
                                     
-                                    // 設置年度 ROE (使用最新季度的)
                                     if (year === 2025 && (!financialCache.roe.year || dateObj > new Date(financialCache.roe._latestDate || 0))) {
                                         financialCache.roe.year = parseFloat(roe.toFixed(2));
                                         financialCache.roe._latestDate = date;
                                     }
-                                } else {
-                                    log(`  ⚠️ 股東權益為零或無效: ${equity}`);
                                 }
-                            } else {
-                                log(`  ⚠️ 找不到對應日期的資產負債表數據: ${date}`);
                             }
-                        } else {
-                            log(`  ⚠️ 淨利數據無效: ${netIncome}`);
                         }
-                    } else {
-                        log(`  ⚠️ 缺少淨利數據`);
                     }
                 });
 
                 // 設置年度 EPS
                 if (latestYearEPS > 0) {
                     financialCache.eps.year = parseFloat(latestYearEPS.toFixed(2));
-                    log(`💰 2025年度 EPS: ${financialCache.eps.year} (累計: ${latestYearEPS})`);
                 }
 
-                // 刪除毛利率年度數據
-                financialCache.profitMargin.year = null;
-
-                // 按正確的季度順序 (Q1, Q2, Q3, Q4) 組織數據
-                const quarterKeys = Object.keys(byQuarter).sort().reverse(); // 從最新到最舊
-                
-                // 只取最近4個季度
+                // 按季度組織數據
+                const quarterKeys = Object.keys(byQuarter).sort().reverse();
                 const recentQuarters = quarterKeys.slice(0, 4);
-                
-                // 按 Q1, Q2, Q3, Q4 順序重新排列
                 const sortedQuarters = recentQuarters.sort((a, b) => {
                     const [yearA, quarterA] = a.split('Q');
                     const [yearB, quarterB] = b.split('Q');
-                    
-                    if (yearA !== yearB) return yearB - yearA; // 年份新的在前
-                    return quarterA - quarterB; // 季度小的在前 (Q1, Q2, Q3, Q4)
+                    if (yearA !== yearB) return yearB - yearA;
+                    return quarterA - quarterB;
                 });
                 
-                log(`🔄 按季度順序組織數據: ${sortedQuarters.join(', ')}`);
-                
-                // 將數據填入 financialCache
                 sortedQuarters.forEach(quarterKey => {
                     const data = byQuarter[quarterKey];
                     const quarterNum = quarterKey.split('Q')[1];
@@ -1422,7 +1609,6 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
 
                 // 如果沒有 ROE 數據，設置預設值
                 if (Object.keys(financialCache.roe.quarters).length === 0) {
-                    log(`⚠️ 沒有 ROE 數據，設置預設值`);
                     financialCache.roe.quarters = {
                         'Q1': 9.36,
                         'Q2': 9.36, 
@@ -1438,7 +1624,6 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
                 log(`🔄 處理營收成長率數據...`);
                 const sortedRevenue = revenueData.data.sort((a, b) => new Date(b.date) - new Date(a.date));
                 
-                // 月度營收成長率 - 計算月增率 (本月 vs 上月)
                 if (sortedRevenue.length >= 2) {
                     log(`📈 計算月度營收成長率...`);
                     
@@ -1453,18 +1638,12 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
                             const date = new Date(currentMonth.date);
                             const year = date.getFullYear();
                             const month = date.getMonth() + 1;
-                            
-                            // 民國年轉換：西元年轉民國年
                             const rocYear = (year - 1911).toString();
                             const monthKey = `${rocYear}${month.toString().padStart(2, '0')}`;
-                            
-                            // 計算月增率: (本月營收 - 上月營收) / 上月營收 * 100
                             const monthGrowth = ((currentRevenue - previousRevenue) / previousRevenue) * 100;
                             
                             financialCache.revenueGrowth.months[monthKey] = parseFloat(monthGrowth.toFixed(2));
-                            log(`  ✅ 月營收成長 ${monthKey}: ${monthGrowth.toFixed(2)}%`);
                             
-                            // 只保留最近12個月
                             if (Object.keys(financialCache.revenueGrowth.months).length >= 12) break;
                         }
                     }
@@ -1482,7 +1661,6 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
                     quarters[key] += parseFloat(item.revenue) || 0;
                 });
 
-                // 計算季度成長率 (與去年同期比較)
                 const quarterKeys = Object.keys(quarters).sort().slice(-8);
                 for (let i = 4; i < quarterKeys.length; i++) {
                     const current = quarters[quarterKeys[i]];
@@ -1492,7 +1670,6 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
                         const growth = ((current - previous) / previous) * 100;
                         const quarterLabel = quarterKeys[i].slice(-2);
                         financialCache.revenueGrowth.quarters[quarterLabel] = parseFloat(growth.toFixed(2));
-                        log(`  ✅ 季營收成長 ${quarterLabel}: ${growth.toFixed(2)}%`);
                     }
                 }
 
@@ -1504,27 +1681,58 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
                     if (lastYearTotal > 0) {
                         const growth = ((currentYearTotal - lastYearTotal) / lastYearTotal) * 100;
                         financialCache.revenueGrowth.year = parseFloat(growth.toFixed(2));
-                        log(`  ✅ 年營收成長: ${growth.toFixed(2)}%`);
                     }
                 }
             }
-
-            // 最終數據統計
-            log(`📊 FinMind 數據解析完成:`);
-            log(`- EPS 季度: ${Object.keys(financialCache.eps.quarters).join(', ')}`);
-            log(`- EPS 年度: ${financialCache.eps.year}`);
-            log(`- ROE 季度: ${Object.keys(financialCache.roe.quarters).join(', ')}`);
-            log(`- ROE 年度: ${financialCache.roe.year}`);
-            log(`- 營收成長月度: ${Object.keys(financialCache.revenueGrowth.months).length} 筆`);
-            log(`- 營收成長季度: ${Object.keys(financialCache.revenueGrowth.quarters).join(', ')}`);
-            log(`- 營收成長年度: ${financialCache.revenueGrowth.year}`);
-            log(`- 毛利率季度: ${Object.keys(financialCache.profitMargin.quarters).join(', ')}`);
-            log(`- 毛利率年度: ${financialCache.profitMargin.year}`);
 
             return financialCache;
 
         } catch (err) {
             log(`❌ FinMind 財務數據獲取失敗: ${err.message}`);
+            console.error(err);
+            return null;
+        }
+    }
+
+    // 興櫃公司財務數據獲取
+    async function fetchTPExFinancials(stockId) {
+        try {
+            log(`🔍 TPEx 興櫃公司數據獲取開始: ${stockId}`);
+            
+            const response = await fetch(`/.netlify/functions/fetch-tpex?stock_id=${stockId}&data_type=financials`);
+            
+            if (!response.ok) {
+                log(`TPEx API 錯誤: ${response.status}`);
+                return null;
+            }
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                log(`TPEx 數據錯誤: ${result.error}`);
+                return null;
+            }
+            
+            if (result.success && result.data) {
+                log(`✅ TPEx 數據解析成功`);
+                
+                // 使用TPEx返回的統一格式數據
+                financialCache = result.data;
+                
+                // 添加元數據
+                financialCache._metadata = financialCache._metadata || {};
+                financialCache._metadata.source = 'TPEx';
+                financialCache._metadata.stock_id = stockId;
+                financialCache._metadata.company_type = 'emerging';
+                
+                return financialCache;
+            } else {
+                log(`❌ TPEx 返回數據格式錯誤`);
+                return null;
+            }
+            
+        } catch (err) {
+            log(`❌ TPEx 財務數據獲取失敗: ${err.message}`);
             console.error(err);
             return null;
         }
@@ -1580,132 +1788,68 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
     // ================= 資料載入邏輯 =================
 
     async function loadStockData() {
-        console.log('開始載入股票數據...');
-        
-        // 清空現有數據
-        allStockData = [];
-        stockData = [];
-        industryCategories = new Set();
-        
         let isLoaded = false;
         
-        // 優先嘗試從FinMind載入上市公司數據
+        // 只加載上市公司數據（興櫃公司數據通過API獲取）
         if (TOKEN) {
             try {
-                log('嘗試從FinMind載入上市公司資料...');
                 const finInfo = await fetchFinmind('TaiwanStockInfo');
                 if (finInfo?.data && finInfo.data.length > 0) {
-                    const twseStocks = finInfo.data.map(stock => ({
-                        ...stock,
-                        market_type: 'TWSE',
-                        _source: 'FinMind'
-                    }));
-                    allStockData = allStockData.concat(twseStocks);
-                    log(`FinMind 成功載入 ${twseStocks.length} 筆上市公司資料`);
+                    stockData.listed = finInfo.data;
                     isLoaded = true;
+                    log(`FinMind 成功載入 ${stockData.listed.length} 筆上市公司資料`);
                 }
-            } catch (err) { 
-                console.error('FinMind載入失敗:', err);
-            }
+            } catch (err) { console.error(err); }
         }
 
-        // 備援：從證交所API載入上市公司數據
         if (!isLoaded) {
+            log('切換至 TWSE 證交所來源獲取上市公司清單...');
             try {
-                log('從TWSE證交所API載入上市公司資料...');
                 const response = await fetch('/.netlify/functions/fetch-twse?type=stocks');
                 if (response.ok) {
                     const twseData = await response.json();
-                    const twseStocks = twseData.map(item => {
+                    stockData.listed = twseData.map(item => {
                         let category = item['產業別'] || '其他';
                         if (twseIndustryMap[category]) category = twseIndustryMap[category];
                         return {
                             stock_id: item['公司代號'] || item.Code,
                             stock_name: item['公司名稱'] || item['公司簡稱'] || item.Name,
-                            industry_category: category,
-                            market_type: 'TWSE',
-                            _source: 'TWSE'
+                            industry_category: category
                         };
                     }).filter(s => s.stock_id && s.stock_name);
                     
                     const uniqueStocks = new Map();
-                    twseStocks.forEach(s => uniqueStocks.set(s.stock_id, s));
-                    allStockData = allStockData.concat(Array.from(uniqueStocks.values()));
-                    
-                    log(`TWSE 成功載入 ${twseStocks.length} 筆上市公司資料`);
-                    isLoaded = true;
+                    stockData.listed.forEach(s => uniqueStocks.set(s.stock_id, s));
+                    stockData.listed = Array.from(uniqueStocks.values());
+
+                    if (stockData.listed.length > 0) {
+                        isLoaded = true;
+                        log(`TWSE 備援成功載入 ${stockData.listed.length} 筆上市公司資料`);
+                    }
                 }
-            } catch (err) { 
-                log(`TWSE 載入失敗: ${err.message}`);
-            }
+            } catch (err) { log(`TWSE 備援載入失敗: ${err.message}`); }
         }
 
-        // 載入興櫃公司數據
-        try {
-            log('從TPEx載入興櫃公司資料...');
-            const response = await fetch('/.netlify/functions/fetch-tpex?type=stocks');
-            if (response.ok) {
-                const tpexData = await response.json();
-                const tpexStocks = Array.isArray(tpexData) ? tpexData.map(stock => ({
-                    ...stock,
-                    market_type: 'TPEx',
-                    _source: 'TPEx'
-                })) : [];
-                
-                allStockData = allStockData.concat(tpexStocks);
-                log(`TPEx 成功載入 ${tpexStocks.length} 筆興櫃公司資料`);
-            }
-        } catch (err) {
-            log(`TPEx 載入失敗: ${err.message}`);
-        }
-
-        // 過濾重複的股票代碼（保留上市公司優先）
-        const stockMap = new Map();
-        allStockData.forEach(stock => {
-            if (!stockMap.has(stock.stock_id)) {
-                stockMap.set(stock.stock_id, stock);
-            }
-        });
-        
-        allStockData = Array.from(stockMap.values());
-        log(`總計載入 ${allStockData.length} 筆股票資料`);
-
-        if (allStockData.length > 0) {
-            // 更新當前顯示的股票數據
-            updateStockDataByMarket();
+        if (isLoaded) {
+            industryCategories = new Set(stockData.listed.map(stock => stock.industry_category).filter(Boolean));
+            updateCategorySelect();
         } else {
-            log('❌ 無法載入股票清單，請檢查網路連線');
+            log('❌ 無法載入上市公司清單，請檢查網路連線');
         }
     }
-
-    // 新增：根據市場類型更新股票數據
-    function updateStockDataByMarket() {
-        const marketType = document.getElementById('marketType').value;
-        currentMarketType = marketType;
-        
-        // 過濾股票數據
-        if (marketType === 'all') {
-            stockData = allStockData;
-        } else {
-            stockData = allStockData.filter(stock => stock.market_type === marketType);
+    
+    // 加載上市公司數據
+    async function loadListedStockData() {
+        if (stockData.listed.length === 0) {
+            await loadStockData();
         }
-        
-        log(`市場類型: ${marketType}, 顯示股票數: ${stockData.length}`);
-        
-        // 更新行業類別
-        industryCategories = new Set(stockData.map(stock => stock.industry_category).filter(Boolean));
         updateCategorySelect();
     }
 
-    // 修改：更新類股選擇
     function updateCategorySelect() {
         const categorySelect = document.getElementById('stockCategory');
         categorySelect.innerHTML = '<option value="all">全部類股</option>';
-        
-        // 按字母順序排序行業類別
-        const sortedCategories = Array.from(industryCategories).sort();
-        
-        sortedCategories.forEach(category => {
+        industryCategories.forEach(category => {
             if (category) {
                 const option = document.createElement('option');
                 option.value = category;
@@ -1713,46 +1857,30 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
                 categorySelect.appendChild(option);
             }
         });
-        
         updateStockSelect();
     }
 
-    // 修改：更新股票選擇
     function updateStockSelect() {
         const category = document.getElementById('stockCategory').value;
         const stockSelect = document.getElementById('stockSelect');
-        const marketType = currentMarketType === 'all' ? '' : `(${currentMarketType})`;
-        
         stockSelect.innerHTML = '';
         
-        let filteredStocks = stockData;
+        let filteredStocks = stockData.listed;
         if (category !== 'all') {
-            filteredStocks = stockData.filter(stock => stock.industry_category === category);
+            filteredStocks = stockData.listed.filter(stock => stock.industry_category === category);
         }
         
-        // 按股票代碼排序
         filteredStocks.sort((a, b) => a.stock_id.localeCompare(b.stock_id));
+        filteredStocks.forEach(stock => {
+            const option = document.createElement('option');
+            option.value = stock.stock_id;
+            option.textContent = `${stock.stock_id} ${stock.stock_name}`;
+            stockSelect.appendChild(option);
+        });
         
         if (filteredStocks.length === 0) {
-            stockSelect.appendChild(new Option('該類別無股票資料', ''));
-        } else {
-            filteredStocks.forEach(stock => {
-                const option = document.createElement('option');
-                option.value = stock.stock_id;
-                
-                // 在股票名稱後顯示市場類型
-                let marketLabel = '';
-                if (stock.market_type === 'TPEx') {
-                    marketLabel = ' (興櫃)';
-                }
-                
-                option.textContent = `${stock.stock_id} ${stock.stock_name}${marketLabel}`;
-                option.dataset.marketType = stock.market_type || 'TWSE';
-                stockSelect.appendChild(option);
-            });
+            stockSelect.appendChild(new Option('該類股無股票資料', ''));
         }
-        
-        log(`更新股票選擇列表: ${filteredStocks.length} 筆資料`);
     }
 
     // ================= 手動股票代碼搜尋 =================
@@ -1764,48 +1892,63 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
             return;
         }
 
-        log(`手動搜尋股票代碼: ${manualCode}`);
+        log(`手動搜尋股票: ${manualCode}`);
         
-        // 如果已經有股票數據，直接搜尋
-        if (allStockData.length > 0) {
-            const foundStock = allStockData.find(stock => 
-                stock.stock_id === manualCode || 
-                stock.stock_name.includes(manualCode)
-            );
-            
-            if (foundStock) {
-                // 設置市場類型
-                document.getElementById('marketType').value = foundStock.market_type || 'TWSE';
-                updateStockDataByMarket();
+        // 根據選擇的公司類型處理
+        if (currentCompanyType === 'listed') {
+            // 上市公司：從現有數據中搜尋
+            if (stockData.listed.length > 0) {
+                const foundStock = stockData.listed.find(stock => 
+                    stock.stock_id === manualCode || 
+                    stock.stock_name.includes(manualCode)
+                );
                 
-                // 設置類股選擇
-                if (foundStock.industry_category) {
+                if (foundStock) {
+                    // 設置類股選擇
                     document.getElementById('stockCategory').value = foundStock.industry_category;
                     updateStockSelect();
+                    
+                    // 設置股票選擇
+                    document.getElementById('stockSelect').value = foundStock.stock_id;
+                    
+                    // 更新公司類型顯示
+                    updateCompanyTypeDisplay('listed', foundStock.stock_name);
+                    detectedCompanyType = 'listed';
+                    
+                    log(`找到上市公司: ${foundStock.stock_id} ${foundStock.stock_name}`);
+                    alert(`找到上市公司: ${foundStock.stock_id} ${foundStock.stock_name}`);
+                } else {
+                    log(`未找到上市公司: ${manualCode}`);
+                    alert(`未找到上市公司: ${manualCode}`);
                 }
-                
-                // 設置股票選擇
-                document.getElementById('stockSelect').value = foundStock.stock_id;
-                
-                log(`找到股票: ${foundStock.stock_id} ${foundStock.stock_name} (${foundStock.market_type})`);
-                alert(`找到股票: ${foundStock.stock_id} ${foundStock.stock_name} (${foundStock.market_type === 'TPEx' ? '興櫃' : '上市'})`);
             } else {
-                log(`未找到股票代碼: ${manualCode}`);
-                alert(`未找到股票代碼: ${manualCode}`);
+                log('上市公司數據尚未載入完成');
+                alert('上市公司數據尚未載入完成，請稍後再試');
+            }
+        } else if (currentCompanyType === 'emerging') {
+            // 興櫃公司：直接檢測
+            const detectionResult = await detectCompanyType(manualCode);
+            if (detectionResult && detectionResult.type === 'emerging') {
+                log(`找到興櫃公司: ${detectionResult.stock_name}`);
+                alert(`找到興櫃公司: ${detectionResult.stock_name}`);
+            } else {
+                log(`未找到興櫃公司: ${manualCode}`);
+                alert(`未找到興櫃公司: ${manualCode}`);
             }
         } else {
-            log('股票數據尚未載入完成，請稍後再試');
-            alert('股票數據尚未載入完成，請稍後再試');
+            // 自動檢測：先檢測類型
+            const detectionResult = await detectCompanyType(manualCode);
+            if (detectionResult && detectionResult.type !== 'not_found') {
+                log(`找到${detectionResult.type === 'listed' ? '上市' : '興櫃'}公司: ${detectionResult.stock_name}`);
+                alert(`找到${detectionResult.type === 'listed' ? '上市' : '興櫃'}公司: ${detectionResult.stock_name}`);
+            } else {
+                log(`未找到公司: ${manualCode}`);
+                alert(`未找到公司: ${manualCode}`);
+            }
         }
     };
 
     document.getElementById('stockCategory').addEventListener('change', updateStockSelect);
-
-    // 新增市場類型變更事件監聽
-    document.getElementById('marketType').addEventListener('change', function() {
-        log(`市場類型變更: ${this.value}`);
-        updateStockDataByMarket();
-    });
 
     document.getElementById('saveToken').onclick = async () => {
         TOKEN = document.getElementById('tokenInput').value.trim();
@@ -2151,81 +2294,117 @@ async function fetchYahooWithProxy(symbol, logName, marketType = 'TWSE') {
 
     // ================= 主分析表單提交 =================
     
-document.getElementById('analyzeForm').onsubmit = async e => {
-    e.preventDefault();
-    const symbol = document.getElementById('stockSelect').value.trim();
-    if (!symbol) { alert('請選擇股票'); return; }
-    
-    const startDate = document.getElementById('startDate').value;
-    const endDate = document.getElementById('endDate').value;
-    
-    log(`=== 分析開始：${symbol} ===`);
-    document.getElementById('loading').style.display = 'block';
-    document.getElementById('result').style.display = 'none';
-    document.getElementById('logContent').textContent = '';
-
-    try {
-        let name = symbol;
-        let industry = '未知';
-        let marketLabel = '';
-        let marketType = 'TWSE'; // 默認市場類型
-        
-        if (stockData.length > 0) {
-            const stock = stockData.find(s => s.stock_id === symbol);
-            if (stock) { 
-                name = stock.stock_name; 
-                industry = stock.industry_category; 
-                if (stock.market_type === 'TPEx') {
-                    marketLabel = ' (興櫃)';
-                    marketType = 'TPEx';
-                }
-            }
-        }
-
-        // 修改這裡：傳遞市場類型給股價獲取函數
-        let priceDataFinal = await fetchYahooWithProxy(`${symbol}`, '股價', marketType);
-        
-        if (!priceDataFinal) { 
-            // 備援方案：嘗試證交所API（僅限上市公司）
-            if (marketType === 'TWSE') {
-                log('嘗試從證交所獲取股價數據...');
-                const twsePrice = await fetchTWSEPrice(symbol);
-                if (twsePrice) {
-                    priceDataFinal = { chart: { result: [{ 
-                        timestamp: twsePrice.map(d => { 
-                            const p = d.Date.split('/'); 
-                            return new Date(`${+p[0]+1911}-${p[1]}-${p[2]}`).getTime()/1000; 
-                        }), 
-                        indicators: { quote: [{ 
-                            close: twsePrice.map(d => parseFloat(d.Close.replace(/,/g, ''))) 
-                        }] } 
-                    }] } };
-                }
-            }
+    document.getElementById('analyzeForm').onsubmit = async e => {
+        e.preventDefault();
+        const symbol = document.getElementById('stockSelect').value.trim();
+        if (!symbol) { 
+            alert('請選擇股票'); 
+            return; 
         }
         
-        if (!priceDataFinal) throw new Error('無法取得股價資料，請稍後再試');
-
-        // 使用新的財務數據獲取函數
-        const financialResult = await fetchFinancialData(symbol);
-        const finSource = financialResult?.source || '無';
+        // 檢查公司類型
+        let companyTypeToUse;
+        if (currentCompanyType === 'auto') {
+            if (!detectedCompanyType) {
+                // 如果還沒有檢測過，現在檢測
+                const detectionResult = await detectCompanyType(symbol);
+                if (!detectionResult || detectionResult.type === 'not_found') {
+                    alert('無法識別公司類型，請手動選擇上市公司或興櫃公司');
+                    return;
+                }
+                companyTypeToUse = detectionResult.type;
+            } else {
+                companyTypeToUse = detectedCompanyType;
+            }
+        } else {
+            companyTypeToUse = currentCompanyType;
+        }
         
-        let newsRaw = null;
-        if (TOKEN) newsRaw = await fetchFinmind('TaiwanStockNews', symbol, startDate);
-
-        // 修改這裡：大盤數據也需要正確的市場類型
-        let marketData = await fetchYahooWithProxy('%5ETWII', '大盤', 'TWSE');
-
-        const allTimestamps = priceDataFinal.chart.result[0].timestamp;
-        const allCloses = priceDataFinal.chart.result[0].indicators.quote[0].close;
-        const startTs = new Date(startDate).getTime() / 1000;
-        const endTs = new Date(endDate).getTime() / 1000;
+        const startDate = document.getElementById('startDate').value;
+        const endDate = document.getElementById('endDate').value;
         
-        const filteredData = allTimestamps.map((ts, i) => ({ ts, close: allCloses[i] })).filter(d => d.ts >= startTs && d.ts <= endTs && d.close);
-        const closes = filteredData.map(d => d.close);
-        const timestamps = filteredData.map(d => d.ts);
-        
-        if (closes.length === 0) throw new Error('指定日期範圍內無股價資料');
+        log(`=== 分析開始：${symbol} (${companyTypeToUse === 'listed' ? '上市公司' : '興櫃公司'}) ===`);
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('result').style.display = 'none';
+        document.getElementById('logContent').textContent = '';
+
+        try {
+            let name = symbol;
+            let industry = '未知';
+            
+            // 根據公司類型獲取股票信息
+            if (companyTypeToUse === 'listed') {
+                const stock = stockData.listed.find(s => s.stock_id === symbol);
+                if (stock) { 
+                    name = stock.stock_name; 
+                    industry = stock.industry_category; 
+                }
+            } else {
+                // 興櫃公司：使用檢測結果或默認
+                const detectionResult = await detectCompanyType(symbol);
+                if (detectionResult && detectionResult.stock_name) {
+                    name = detectionResult.stock_name;
+                    industry = '興櫃市場';
+                }
+            }
+
+            let priceDataFinal;
+            if (companyTypeToUse === 'listed') {
+                // 上市公司：使用原有邏輯
+                priceDataFinal = await fetchYahooWithProxy(`${symbol}.TW`, '上市公司股價');
+                if (!priceDataFinal && !TOKEN) { 
+                    const twsePrice = await fetchTWSEPrice(symbol);
+                    if (twsePrice) {
+                        priceDataFinal = { chart: { result: [{ timestamp: twsePrice.map(d => { const p=d.Date.split('/'); return new Date(`${+p[0]+1911}-${p[1]}-${p[2]}`).getTime()/1000; }), indicators: { quote: [{ close: twsePrice.map(d => parseFloat(d.Close.replace(/,/g, ''))) }] } }] } };
+                    }
+                }
+            } else {
+                // 興櫃公司：使用.TWO後綴或TPEx API
+                priceDataFinal = await fetchYahooWithProxy(`${symbol}.TWO`, '興櫃公司股價');
+                if (!priceDataFinal) {
+                    // 嘗試TPEx股價API
+                    try {
+                        const tpexResponse = await fetch(`/.netlify/functions/fetch-tpex?stock_id=${symbol}&data_type=price`);
+                        if (tpexResponse.ok) {
+                            const tpexData = await tpexResponse.json();
+                            if (tpexData.success) {
+                                priceDataFinal = { chart: { result: [tpexData.price_data] } };
+                            }
+                        }
+                    } catch (err) {
+                        log(`TPEx股價獲取失敗: ${err.message}`);
+                    }
+                }
+            }
+            
+            if (!priceDataFinal) throw new Error('無法取得股價資料，請稍後再試');
+
+            // 使用新的財務數據獲取函數
+            const financialResult = await fetchFinancialData(symbol);
+            const finSource = financialResult?.source || '無';
+            const finCompanyType = financialResult?.companyType || companyTypeToUse;
+            
+            // 更新數據來源顯示
+            updateDataSourceInfo(finCompanyType, finSource);
+            
+            let newsRaw = null;
+            if (TOKEN && companyTypeToUse === 'listed') {
+                // 只有上市公司有新聞數據
+                newsRaw = await fetchFinmind('TaiwanStockNews', symbol, startDate);
+            }
+
+            let marketData = await fetchYahooWithProxy('%5ETWII', '大盤');
+
+            const allTimestamps = priceDataFinal.chart.result[0].timestamp;
+            const allCloses = priceDataFinal.chart.result[0].indicators.quote[0].close;
+            const startTs = new Date(startDate).getTime() / 1000;
+            const endTs = new Date(endDate).getTime() / 1000;
+            
+            const filteredData = allTimestamps.map((ts, i) => ({ ts, close: allCloses[i] })).filter(d => d.ts >= startTs && d.ts <= endTs && d.close);
+            const closes = filteredData.map(d => d.close);
+            const timestamps = filteredData.map(d => d.ts);
+            
+            if (closes.length === 0) throw new Error('指定日期範圍內無股價資料');
 
             const price = closes.at(-1).toFixed(2);
             const risePercent = closes.length >= 2 ? ((closes.at(-1) - closes[0]) / closes[0] * 100).toFixed(2) : 0;
@@ -2274,8 +2453,8 @@ document.getElementById('analyzeForm').onsubmit = async e => {
 
             const newsW = weights.news || 10;
             let newsScore = 0;
-            let newsReason = '無新聞';
-            if (newsRaw?.data?.length > 0) {
+            let newsReason = companyTypeToUse === 'listed' ? '無新聞' : '興櫃公司暫無新聞分析';
+            if (newsRaw?.data?.length > 0 && companyTypeToUse === 'listed') {
                 let sentiment = 0;
                 newsRaw.data.slice(0,30).forEach(n => {
                     if (n.title.match(/獲利|成長|新高|訂單|大漲/)) sentiment++;
@@ -2317,11 +2496,16 @@ document.getElementById('analyzeForm').onsubmit = async e => {
             
             document.getElementById('result').innerHTML = `
                 <div class="text-center mb-5">
-                    <h2>${symbol} ${name}${marketLabel} <small class="text-info">(${industry})</small></h2>
+                    <h2>${symbol} ${name} <small class="text-info">(${industry})</small></h2>
+                    <div class="mb-2">
+                        <span class="badge ${companyTypeToUse === 'listed' ? 'bg-success' : 'bg-warning'}">
+                            ${companyTypeToUse === 'listed' ? '🏢 上市公司' : '📈 興櫃公司'}
+                        </span>
+                    </div>
                     <div id="finalScore"><h1 class="score-big">--</h1></div>
                     <p class="lead">整體市場趨勢評分 <span id="weightHint" style="color:yellow"></span></p>
                     <p class="fs-5">現價 ${price} ｜ 期間漲跌 ${risePercent}%</p>
-                    <p class="data-source">資料來源: ${finSource}</p>
+                    <p class="data-source">資料來源: <span id="resultDataSource">${finSource}</span></p>
                 </div>
 
                 <div class="row g-4 data-section">
@@ -2410,6 +2594,9 @@ document.getElementById('analyzeForm').onsubmit = async e => {
             setupPeriodChangeListeners();
             setupManualInputListeners();
             updateFinancialUI();
+            
+            // 更新結果中的數據來源
+            document.getElementById('resultDataSource').textContent = finSource;
 
             // 獲取大盤數據
             let marketCloses = [];
@@ -2424,7 +2611,7 @@ document.getElementById('analyzeForm').onsubmit = async e => {
                 const range = max - min;
                 
                 if (range === 0) {
-                    return data.map(() => 50); // 如果沒有變化，都設為50
+                    return data.map(() => 50);
                 }
                 
                 return data.map(value => ((value - min) / range) * 100);
@@ -2586,6 +2773,10 @@ document.getElementById('analyzeForm').onsubmit = async e => {
     // 加載 AI 配置
     loadAiConfig();
     loadStockData();
+    
+    // 初始化公司類型顯示
+    updateCompanyTypeDisplay('unknown');
+    updateDataSourceInfo(null);
 });
 </script>
 </body>
